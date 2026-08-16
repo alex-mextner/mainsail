@@ -126,6 +126,9 @@ export const allDashboardPanels = [
 export const thumbnailSmallMin = 30
 export const thumbnailSmallMax = 64
 export const thumbnailBigMin = 128
+// default height cap of the big thumbnail in the status panel. the thumbnail keeps its own
+// aspect ratio below that cap, so the model is always shown completely and never cropped.
+export const thumbnailBigMaxHeight = 320
 
 export const navigationWidth = 220
 export const navigationItemHeight = 48

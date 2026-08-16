@@ -1,26 +1,27 @@
 <template>
-    <div v-if="current_filename" ref="wrapper" class="statusPanel-printstatus-thumbnail">
-        <v-img
+    <div v-if="current_filename" class="statusPanel-printstatus-thumbnail">
+        <div
             v-if="boolBigThumbnail"
-            ref="bigThumbnail"
-            :src="thumbnailBig"
-            tabindex="-1"
-            class="d-flex align-end statusPanel-big-thumbnail"
-            height="200"
+            class="statusPanel-big-thumbnail"
+            :class="{ 'statusPanel-big-thumbnail--zoomable': printstatusThumbnailZoom }"
+            :tabindex="printstatusThumbnailZoom ? -1 : false"
             :style="thumbnailStyle"
             @focus="focus = true"
             @blur="focus = false">
-            <v-card-title class="white--text py-2 px-2" :style="styleThumbnailOverlay">
-                <v-row>
-                    <v-col>
-                        <span class="subtitle-2 text-truncate px-0 text--disabled d-block">
-                            <v-icon small class="mr-2">{{ mdiFileOutline }}</v-icon>
-                            {{ current_filename }}
-                        </span>
-                    </v-col>
-                </v-row>
-            </v-card-title>
-        </v-img>
+            <div class="statusPanel-big-thumbnail__backdrop" :style="backdropStyle"></div>
+            <v-img :src="thumbnailBig" contain height="100%" class="d-flex align-end statusPanel-big-thumbnail__image">
+                <v-card-title class="white--text py-2 px-2" :style="styleThumbnailOverlay">
+                    <v-row>
+                        <v-col>
+                            <span class="subtitle-2 text-truncate px-0 text--disabled d-block">
+                                <v-icon small class="mr-2">{{ mdiFileOutline }}</v-icon>
+                                {{ current_filename }}
+                            </span>
+                        </v-col>
+                    </v-row>
+                </v-card-title>
+            </v-img>
+        </div>
         <template v-else>
             <v-container>
                 <v-row>
@@ -81,14 +82,18 @@
 
 <script lang="ts">
 import Component from 'vue-class-component'
-import { Mixins, Ref, Watch } from 'vue-property-decorator'
+import { Mixins } from 'vue-property-decorator'
 import BaseMixin from '@/components/mixins/base'
-import { defaultBigThumbnailBackground, thumbnailBigMin, thumbnailSmallMax, thumbnailSmallMin } from '@/store/variables'
+import {
+    defaultBigThumbnailBackground,
+    thumbnailBigMaxHeight,
+    thumbnailBigMin,
+    thumbnailSmallMax,
+    thumbnailSmallMin,
+} from '@/store/variables'
 import { mdiFileOutline, mdiFile } from '@mdi/js'
-import { Debounce } from 'vue-debounce-decorator'
 import { escapePath } from '@/plugins/helpers'
 import { FileStateFileThumbnail } from '@/store/files/types'
-import Vue from 'vue'
 
 @Component({})
 export default class StatusPanelPrintstatusThumbnail extends Mixins(BaseMixin) {
@@ -96,11 +101,6 @@ export default class StatusPanelPrintstatusThumbnail extends Mixins(BaseMixin) {
     mdiFile = mdiFile
 
     focus = false
-    thumbnailFactor = 0
-    resizeObserver: ResizeObserver | null = null
-
-    @Ref() readonly wrapper!: HTMLDivElement
-    @Ref() readonly bigThumbnail!: Vue
 
     get current_filename() {
         return this.$store.state.printer.print_stats?.filename ?? ''
@@ -198,24 +198,30 @@ export default class StatusPanelPrintstatusThumbnail extends Mixins(BaseMixin) {
         return this.$store.state.gui.uiSettings.bigThumbnailBackground ?? defaultBigThumbnailBackground
     }
 
+    // the frame keeps the aspect ratio of the thumbnail itself, so the image inside can be
+    // displayed with `contain` without ever being cropped and without empty letterbox bars.
+    // only very tall thumbnails run into the height cap and get (correct) bars on the sides.
     get thumbnailStyle() {
-        const output: { height: string; backgroundColor?: string } = {
-            height: '200px',
+        const output: { aspectRatio: string; maxHeight: string; backgroundColor?: string } = {
+            aspectRatio: `${this.thumbnailBigWidth} / ${this.thumbnailBigHeight}`,
+            maxHeight: `${thumbnailBigMaxHeight}px`,
         }
 
-        if (!this.printstatusThumbnailZoom) {
-            output.height = '100%'
-        } else if (this.focus && this.thumbnailBlurHeight > 0) {
-            output.height = `${this.thumbnailBlurHeight}px`
-        }
+        // click/focus lifts the height cap, but never beyond the viewport
+        if (this.printstatusThumbnailZoom && this.focus) output.maxHeight = '100vh'
 
         if (defaultBigThumbnailBackground.toLowerCase() !== this.bigThumbnailBackground.toLowerCase()) {
             output.backgroundColor = this.bigThumbnailBackground
-
-            return output
         }
 
         return output
+    }
+
+    // blurred copy of the thumbnail, fills the free space next to a contained image
+    get backdropStyle() {
+        if (!this.thumbnailBig) return {}
+
+        return { backgroundImage: `url("${this.thumbnailBig}")` }
     }
 
     get styleThumbnailOverlay() {
@@ -231,61 +237,53 @@ export default class StatusPanelPrintstatusThumbnail extends Mixins(BaseMixin) {
         return style
     }
 
-    get thumbnailBlurHeight() {
-        if (this.thumbnailFactor === 0) return 0
-
-        return (this.thumbnailBigHeight * this.thumbnailFactor).toFixed()
-    }
-
     get printstatusThumbnailZoom() {
         return this.$store.state.gui.uiSettings.printstatusThumbnailZoom ?? true
-    }
-
-    mounted() {
-        this.setupResizeObserver()
-    }
-
-    beforeDestroy() {
-        this.resizeObserver?.disconnect()
-    }
-
-    calcThumbnailFactor() {
-        const thumbnailClientWidth = this.bigThumbnail?.$el.clientWidth ?? 0
-        if (!thumbnailClientWidth || !this.thumbnailBigWidth) this.thumbnailFactor = 0
-
-        return (this.thumbnailFactor = thumbnailClientWidth / this.thumbnailBigWidth)
-    }
-
-    setupResizeObserver() {
-        this.resizeObserver?.disconnect()
-
-        if (!this.wrapper) return
-
-        this.resizeObserver = new ResizeObserver(() => this.handleResize())
-        this.resizeObserver.observe(this.wrapper)
-    }
-
-    @Debounce(200)
-    handleResize() {
-        this.$nextTick(() => {
-            this.calcThumbnailFactor()
-        })
-    }
-
-    @Watch('current_filename')
-    onCurrentFilenameChanged() {
-        this.$nextTick(() => this.calcThumbnailFactor())
     }
 }
 </script>
 
 <style scoped>
-.statusPanel-big-thumbnail {
-    transition: height 0.25s ease-out;
-}
-
 .statusPanel-printstatus-thumbnail {
     position: relative;
+}
+
+.statusPanel-big-thumbnail {
+    position: relative;
+    width: 100%;
+    overflow: hidden;
+    outline: none;
+    transition: max-height 0.25s ease-out;
+}
+
+.statusPanel-big-thumbnail--zoomable {
+    cursor: zoom-in;
+}
+
+.statusPanel-big-thumbnail--zoomable:focus {
+    cursor: zoom-out;
+}
+
+.statusPanel-big-thumbnail__backdrop {
+    position: absolute;
+    top: 0;
+    right: 0;
+    bottom: 0;
+    left: 0;
+    background-position: center center;
+    background-size: cover;
+    filter: blur(20px);
+    transform: scale(1.2);
+    opacity: 0.35;
+    pointer-events: none;
+}
+
+.statusPanel-big-thumbnail__image {
+    position: absolute;
+    top: 0;
+    right: 0;
+    bottom: 0;
+    left: 0;
 }
 
 .statusPanel-thumbnail-overlay {
