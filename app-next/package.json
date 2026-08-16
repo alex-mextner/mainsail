@@ -1,0 +1,35 @@
+{
+    "name": "mainsail-next",
+    "version": "0.1.0",
+    "private": true,
+    "type": "module",
+    "description": "Vue 3 + shadcn-vue rewrite of the Mainsail UI (fork). Reuses the Moonraker data layer from the Vue 2 tree.",
+    "scripts": {
+        "dev": "vite",
+        "build": "vue-tsc --noEmit && vite build",
+        "build:nocheck": "vite build",
+        "preview": "vite preview",
+        "typecheck": "vue-tsc --noEmit",
+        "probe": "node scripts/probe-moonraker.mjs"
+    },
+    "dependencies": {
+        "@vueuse/core": "^13.0.0",
+        "class-variance-authority": "^0.7.1",
+        "clsx": "^2.1.1",
+        "lucide-vue-next": "^0.500.0",
+        "reka-ui": "^2.10.3",
+        "tailwind-merge": "^3.0.0",
+        "vue": "^3.5.41",
+        "vue-router": "^4.5.0",
+        "vuex": "^4.1.0"
+    },
+    "devDependencies": {
+        "@tailwindcss/vite": "^4.3.3",
+        "@types/node": "^20.19.0",
+        "@vitejs/plugin-vue": "^6.0.8",
+        "tailwindcss": "^4.3.3",
+        "typescript": "^5.9.0",
+        "vite": "^8.2.1",
+        "vue-tsc": "^2.2.0"
+    }
+}
