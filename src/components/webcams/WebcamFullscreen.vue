@@ -28,7 +28,12 @@
             </div>
 
             <transition name="fade-transition">
-                <webcam-hud v-if="showHud" class="webcam-fullscreen__hud" />
+                <!--
+                    `show` is part of the condition on purpose: the hud carries an echarts
+                    instance that polls the temperature store, and it must not stay mounted
+                    (or keep its chart alive) while the overlay is closed.
+                -->
+                <webcam-hud v-if="show && showHud" class="webcam-fullscreen__hud" />
             </transition>
         </div>
     </v-dialog>
