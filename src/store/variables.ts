@@ -130,6 +130,24 @@ export const thumbnailBigMin = 128
 // aspect ratio below that cap, so the model is always shown completely and never cropped.
 export const thumbnailBigMaxHeight = 320
 
+// The webcam hud docks into the black bar next to the camera image when that bar is big
+// enough to stay readable, and floats on top of the image otherwise.
+//
+// Minimum width of a vertical (pillarbox) bar. The docked column has to fit two things
+// without wrapping: the temperature row ("241 / 240 °C" plus its label, ~150px at the hud
+// type scale) and a chart that still shows its y-axis labels and ~4 time ticks (~150px), plus
+// 2x12px padding - so ~175px is the functional floor. 200px keeps a little air and is exactly
+// what the most common desktop case produces (a 16:9 window with a 4:3 camera leaves 200px
+// bars at 1600x900).
+export const webcamHudMinDockWidth = 200
+// Minimum height of a horizontal (letterbox) bar: 2x10px padding plus the tallest content
+// block (12px label + 22px value + gap ~= 46px) still leaves the chart as the binding
+// constraint, and a temperature chart under ~56px cannot show gridlines. 20 + 56 = 76,
+// rounded up to 90 for breathing room.
+export const webcamHudMinDockHeight = 90
+// Distance the hud keeps from the edges when it floats over the image.
+export const webcamHudMargin = 16
+
 export const navigationWidth = 220
 export const navigationItemHeight = 48
 export const panelToolbarHeight = 48

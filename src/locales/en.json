@@ -1107,6 +1107,7 @@
                 "NoFile": "No file loaded",
                 "Nozzle": "Nozzle",
                 "Remaining": "Remaining",
+                "ResetPosition": "Dock overlay back to the black bar",
                 "ShowHud": "Show overlay",
                 "Speed": "Speed",
                 "Target": "target"

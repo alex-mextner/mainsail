@@ -1,14 +1,16 @@
 <template>
-    <div class="webcam-hud">
-        <div class="webcam-hud__head">
-            <v-icon small class="mr-2">{{ mdiFileOutline }}</v-icon>
-            <span class="webcam-hud__filename">{{ filename || $t('Panels.WebcamPanel.Hud.NoFile') }}</span>
-            <span class="webcam-hud__state">{{ stateLabel }}</span>
-        </div>
+    <div class="webcam-hud" :class="`webcam-hud--${layout}`">
+        <div class="webcam-hud__info">
+            <div class="webcam-hud__head">
+                <v-icon small class="mr-2">{{ mdiFileOutline }}</v-icon>
+                <span class="webcam-hud__filename">{{ filename || $t('Panels.WebcamPanel.Hud.NoFile') }}</span>
+                <span class="webcam-hud__state">{{ stateLabel }}</span>
+            </div>
 
-        <div v-if="showProgress" class="webcam-hud__progress">
-            <v-progress-linear :value="progress" height="6" rounded background-color="rgba(255, 255, 255, 0.15)" />
-            <span class="webcam-hud__progress-value">{{ progress.toFixed(0) }} %</span>
+            <div v-if="showProgress" class="webcam-hud__progress">
+                <v-progress-linear :value="progress" height="6" rounded background-color="rgba(255, 255, 255, 0.15)" />
+                <span class="webcam-hud__progress-value">{{ progress.toFixed(0) }} %</span>
+            </div>
         </div>
 
         <div class="webcam-hud__stats">
@@ -43,13 +45,13 @@
             </div>
         </div>
 
-        <webcam-hud-chart class="webcam-hud__chart" />
+        <webcam-hud-chart v-if="showChart" class="webcam-hud__chart" :height="chartHeight" />
     </div>
 </template>
 
 <script lang="ts">
 import Component from 'vue-class-component'
-import { Mixins } from 'vue-property-decorator'
+import { Mixins, Prop } from 'vue-property-decorator'
 import BaseMixin from '@/components/mixins/base'
 import WebcamHudChart from '@/components/webcams/WebcamHudChart.vue'
 import { mdiFileOutline } from '@mdi/js'
@@ -68,6 +70,12 @@ interface WebcamHudHeater {
 })
 export default class WebcamHud extends Mixins(BaseMixin) {
     mdiFileOutline = mdiFileOutline
+
+    // 'floating' = card on top of the image, 'vertical' = docked into a side bar,
+    // 'horizontal' = docked into a top/bottom bar
+    @Prop({ type: String, default: 'floating' }) declare readonly layout: string
+    @Prop({ type: Number, default: 110 }) declare readonly chartHeight: number
+    @Prop({ type: Boolean, default: true }) declare readonly showChart: boolean
 
     get filename() {
         return this.$store.state.printer.print_stats?.filename ?? ''
@@ -152,12 +160,70 @@ export default class WebcamHud extends Mixins(BaseMixin) {
 
 <style scoped>
 .webcam-hud {
+    display: flex;
+    flex-direction: column;
     padding: 12px 16px 4px;
     border-radius: 8px;
     color: #fff;
     background: rgba(0, 0, 0, 0.55);
     backdrop-filter: blur(6px);
     box-shadow: 0 2px 18px rgba(0, 0, 0, 0.45);
+}
+
+/*
+ * docked into one of the black bars next to the image. there is no image behind the hud in
+ * that case, so it does not need its own scrim - and the shadow would only smear onto the
+ * black bar.
+ */
+.webcam-hud--vertical,
+.webcam-hud--horizontal {
+    height: 100%;
+    border-radius: 0;
+    background: rgba(0, 0, 0, 0.35);
+    backdrop-filter: none;
+    box-shadow: none;
+}
+
+/* side bar: a column, the chart is pushed to the bottom so the card fills the bar */
+.webcam-hud--vertical .webcam-hud__stats {
+    gap: 10px 12px;
+}
+
+.webcam-hud--vertical .webcam-hud__chart {
+    margin-top: auto;
+}
+
+/* top/bottom bar: one row - info, then the numbers, then the chart on the right */
+.webcam-hud--horizontal {
+    flex-direction: row;
+    align-items: center;
+    gap: 4px 24px;
+    padding: 8px 16px;
+}
+
+.webcam-hud--horizontal .webcam-hud__info {
+    flex: 0 1 260px;
+    min-width: 0;
+    margin-bottom: 0;
+}
+
+.webcam-hud--horizontal .webcam-hud__stats {
+    flex: 1 1 auto;
+    justify-content: space-around;
+}
+
+.webcam-hud--horizontal .webcam-hud__chart {
+    flex: 0 1 340px;
+    min-width: 160px;
+    margin-top: 0;
+}
+
+.webcam-hud--horizontal .webcam-hud__progress {
+    margin-bottom: 0;
+}
+
+.webcam-hud__info {
+    margin-bottom: 2px;
 }
 
 .webcam-hud__head {

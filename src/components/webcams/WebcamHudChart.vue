@@ -4,12 +4,13 @@
         :option="chartOptions"
         :init-options="{ renderer: 'svg' }"
         :autoresize="true"
+        :style="{ height: `${height}px` }"
         class="webcam-hud-chart" />
 </template>
 
 <script lang="ts">
 import Component from 'vue-class-component'
-import { Mixins, Ref, Watch } from 'vue-property-decorator'
+import { Mixins, Prop, Ref, Watch } from 'vue-property-decorator'
 import { Debounce } from 'vue-debounce-decorator'
 import BaseMixin from '@/components/mixins/base'
 import type { ECharts } from 'echarts/core'
@@ -29,6 +30,8 @@ const hudChartTimeWindow = 10 * 60 * 1000
 
 @Component
 export default class WebcamHudChart extends Mixins(BaseMixin) {
+    @Prop({ type: Number, default: 110 }) declare readonly height: number
+
     @Ref('hudchart') readonly hudchart!: EChartRef | undefined
 
     // the hud always sits on top of the (dark) camera image, so it does not follow the
@@ -95,7 +98,9 @@ export default class WebcamHudChart extends Mixins(BaseMixin) {
             },
             xAxis: {
                 type: 'time',
-                splitNumber: 4,
+                // the chart is only ~160px wide when docked into a side bar, where five time
+                // labels run into each other. hideOverlap drops the ones that do not fit.
+                splitNumber: 3,
                 minInterval: 60 * 1000,
                 axisTick: { show: false },
                 axisLine: { show: false },
@@ -103,6 +108,7 @@ export default class WebcamHudChart extends Mixins(BaseMixin) {
                 axisLabel: {
                     color: this.axisColor,
                     fontSize: 10,
+                    hideOverlap: true,
                     formatter: this.hours12Format ? '{hh}:{mm}' : '{HH}:{mm}',
                 },
             },
@@ -234,8 +240,8 @@ export default class WebcamHudChart extends Mixins(BaseMixin) {
 </script>
 
 <style scoped>
+/* the height comes from the parent as an inline style, it depends on the hud layout */
 .webcam-hud-chart {
     width: 100%;
-    height: 110px;
 }
 </style>

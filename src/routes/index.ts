@@ -51,6 +51,18 @@ const routes: AppRoute[] = [
         fullscreen: true,
     },
     {
+        // fullscreen camera with the hud on top. deliberately not in the navigation: the
+        // sidebar already has "Webcam" for the same camera, this route is reached from the
+        // expand button and is meant to be bookmarked / opened directly.
+        name: 'overcam',
+        title: 'Webcam',
+        path: '/overcam/:name?',
+        component: () => import('../pages/Overcam.vue'),
+        alwaysShow: false,
+        showInNavi: false,
+        fullscreen: true,
+    },
+    {
         name: 'console',
         title: 'Console',
         path: '/console',

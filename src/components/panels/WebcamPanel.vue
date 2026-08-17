@@ -9,12 +9,7 @@
         card-class="webcam-panel"
         :margin-bottom="currentPage !== 'page'">
         <template #buttons>
-            <v-btn
-                v-if="webcams.length"
-                text
-                tile
-                :title="$t('Panels.WebcamPanel.Hud.Expand')"
-                @click="fullscreen = true">
+            <v-btn v-if="webcams.length" text tile :title="$t('Panels.WebcamPanel.Hud.Expand')" @click="openFullscreen">
                 <v-icon small>{{ mdiFullscreen }}</v-icon>
             </v-btn>
             <v-menu v-if="showSwitch" :offset-y="true">
@@ -50,16 +45,10 @@
         <v-card-text v-if="webcams.length" class="px-0 py-0 content d-inline-block">
             <v-row>
                 <v-col class="pb-0" style="position: relative">
-                    <!--
-                        the inline stream is unmounted while the fullscreen overlay is open.
-                        a dialog on top does not make this element leave the viewport, so without
-                        the v-if both players would keep pulling frames from the same camera.
-                    -->
-                    <webcam-wrapper v-if="!fullscreen" :webcam="currentCam" :page="currentPage" />
+                    <webcam-wrapper :webcam="currentCam" :page="currentPage" />
                 </v-col>
             </v-row>
         </v-card-text>
-        <webcam-fullscreen v-if="webcams.length" v-model="fullscreen" :webcam="currentCam" />
         <v-card-text v-else>
             <p class="text-center mb-0 text--disabled">{{ $t('Panels.WebcamPanel.NoWebcam') }}</p>
         </v-card-text>
@@ -71,7 +60,6 @@ import Component from 'vue-class-component'
 import { Mixins, Prop } from 'vue-property-decorator'
 import BaseMixin from '../mixins/base'
 import Panel from '@/components/ui/Panel.vue'
-import WebcamFullscreen from '@/components/webcams/WebcamFullscreen.vue'
 import { GuiWebcamStateWebcam } from '@/store/gui/webcams/types'
 import { mdiFullscreen, mdiMenuDown, mdiViewGrid, mdiWebcam } from '@mdi/js'
 import WebcamMixin from '@/components/mixins/webcam'
@@ -79,7 +67,6 @@ import WebcamMixin from '@/components/mixins/webcam'
 @Component({
     components: {
         Panel,
-        WebcamFullscreen,
     },
 })
 export default class WebcamPanel extends Mixins(BaseMixin, WebcamMixin) {
@@ -90,7 +77,13 @@ export default class WebcamPanel extends Mixins(BaseMixin, WebcamMixin) {
     mdiViewGrid = mdiViewGrid
     mdiFullscreen = mdiFullscreen
 
-    fullscreen = false
+    // the fullscreen view is a route of its own, so it can be bookmarked, survives a reload
+    // and is closed with the browser back button
+    openFullscreen() {
+        const params = this.currentCamId !== 'all' ? { name: this.currentCamId } : {}
+
+        this.$router.push({ name: 'overcam', params })
+    }
 
     get webcams(): GuiWebcamStateWebcam[] {
         return this.$store.getters['gui/webcams/getWebcams']
