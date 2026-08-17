@@ -299,6 +299,11 @@ export const useFilesStore = defineStore('files', () => {
             const dir = relativeDirOf(candidate)
             if (dir === null) continue
 
+            // Only directories that have actually been opened. Re-fetching one
+            // nobody has looked at would spend exactly the SD-card I/O this
+            // store exists to avoid -- and it would load on first visit anyway.
+            if (!(dir in directories.value)) continue
+
             // Re-fetch rather than just dropping: the user is most likely
             // looking at the directory that just changed.
             void loadDirectory(dir, true)

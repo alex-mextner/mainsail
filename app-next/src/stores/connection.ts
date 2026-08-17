@@ -131,9 +131,20 @@ export const useConnectionStore = defineStore('connection', () => {
      * Seeded lines are prepended: they are older than anything this session
      * recorded, and their ids stay below the live ones so ordering by id and
      * ordering by time agree.
+     *
+     * 🔴 ONCE PER SESSION, and that guard is not optional. The socket
+     * reconnects by itself, every reconnect runs `initialise()`, and the
+     * console is deliberately NOT cleared on disconnect -- losing the log is
+     * exactly what you do not want when the machine drops out. Without the flag
+     * a single wifi blip on the tablet prepends the whole store a second time,
+     * with ids colliding against the first seed. After the first seed
+     * Moonraker's store is a subset of what is already here anyway.
      */
+    let consoleSeeded = false
+
     async function seedConsole() {
-        if (!client) return
+        if (!client || consoleSeeded) return
+        consoleSeeded = true
 
         const store = await client
             .call<{ gcode_store?: { message: string; time: number; type: string }[] }>('server.gcode_store')
