@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed } from 'vue'
-import { Layers, Clock, Ruler, FileWarning } from 'lucide-vue-next'
+import { mdiLayers, mdiClockOutline, mdiTimerSandComplete, mdiFileAlert } from '@mdi/js'
+import MdiIcon from '@/components/ui/MdiIcon.vue'
 import { Card, CardContent } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
 import { Progress } from '@/components/ui/progress'
@@ -86,7 +87,7 @@ const isUpscaled = computed(() => (thumbnail.value?.width ?? 0) < 420)
                  it the two collide at S density, where the box is short enough
                  that a vertically centred placeholder lands under the scrim. -->
             <div class="text-muted-foreground grid h-full place-items-center gap-2 pb-24 text-sm" v-else>
-                <FileWarning class="size-6" />
+                <MdiIcon :path="mdiFileAlert" class="size-6" />
                 <span>no preview in this file</span>
             </div>
 
@@ -113,21 +114,21 @@ const isUpscaled = computed(() => (thumbnail.value?.width ?? 0) < 420)
             <dl class="grid grid-cols-3 gap-3 text-center">
                 <div>
                     <dt class="text-muted-foreground flex items-center justify-center gap-1 text-[11px]">
-                        <Layers class="size-3" />
+                        <MdiIcon :path="mdiLayers" class="size-3" />
                         Layer
                     </dt>
                     <dd class="tabular mt-1 text-sm font-medium">{{ layer }}</dd>
                 </div>
                 <div>
                     <dt class="text-muted-foreground flex items-center justify-center gap-1 text-[11px]">
-                        <Clock class="size-3" />
+                        <MdiIcon :path="mdiClockOutline" class="size-3" />
                         Elapsed
                     </dt>
                     <dd class="tabular mt-1 text-sm font-medium">{{ elapsed }}</dd>
                 </div>
                 <div>
                     <dt class="text-muted-foreground flex items-center justify-center gap-1 text-[11px]">
-                        <Ruler class="size-3" />
+                        <MdiIcon :path="mdiTimerSandComplete" class="size-3" />
                         Remaining
                     </dt>
                     <dd class="tabular mt-1 text-sm font-medium">{{ remaining }}</dd>

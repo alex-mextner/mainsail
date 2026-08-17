@@ -1,17 +1,17 @@
 <script setup lang="ts">
 import { computed } from 'vue'
-import { Flame, Square, Thermometer } from 'lucide-vue-next'
+import { mdiFire, mdiCheckboxBlankOutline, mdiThermometer } from '@mdi/js'
 import { Badge } from '@/components/ui/badge'
 import { Progress } from '@/components/ui/progress'
-import { sparklinePoints } from '@/composables/useTemperatureHistory'
-import type { Heater } from '@/store/printer/types'
+import MdiIcon from '@/components/ui/MdiIcon.vue'
+import type { Heater } from '@/types/printer'
 
-const props = defineProps<{ heater: Heater; series: number[] }>()
+const props = defineProps<{ heater: Heater }>()
 
 const icon = computed(() => {
-    if (props.heater.kind === 'bed') return Square
-    if (props.heater.kind === 'hotend') return Flame
-    return Thermometer
+    if (props.heater.kind === 'bed') return mdiCheckboxBlankOutline
+    if (props.heater.kind === 'hotend') return mdiFire
+    return mdiThermometer
 })
 
 /** One accent per role, matching the tokens in assets/index.css. */
@@ -19,12 +19,6 @@ const accent = computed(() => {
     if (props.heater.kind === 'bed') return 'text-heater-bed'
     if (props.heater.kind === 'hotend') return 'text-heater-hot'
     return 'text-sensor'
-})
-
-const stroke = computed(() => {
-    if (props.heater.kind === 'bed') return 'var(--heater-bed)'
-    if (props.heater.kind === 'hotend') return 'var(--heater-hot)'
-    return 'var(--sensor)'
 })
 
 const isActive = computed(() => props.heater.target > 0)
@@ -45,20 +39,16 @@ const state = computed(() => {
         variant: 'heating' as const,
     }
 })
-
-const points = computed(() => sparklinePoints(props.series))
 </script>
 
 <template>
     <div class="grid grid-cols-[1fr_auto] items-center gap-x-dgap gap-y-2 py-drow">
-        <!-- name + state -->
         <div class="flex min-w-0 items-center gap-2">
-            <component :is="icon" :class="['size-4 shrink-0', accent]" />
+            <MdiIcon :path="icon" :class="['size-4 shrink-0', accent]" />
             <span class="truncate text-sm font-medium">{{ heater.label }}</span>
             <Badge v-if="state" :variant="state.variant">{{ state.label }}</Badge>
         </div>
 
-        <!-- reading -->
         <div class="flex items-baseline justify-end gap-1">
             <span class="tabular text-reading leading-none font-semibold">{{ heater.temperature.toFixed(1) }}</span>
             <span class="text-muted-foreground text-sm">°C</span>
@@ -67,24 +57,6 @@ const points = computed(() => sparklinePoints(props.series))
             </span>
         </div>
 
-        <!-- trend: the full series always fits the box, never cropped -->
-        <svg
-            v-if="points"
-            class="col-span-2 h-6 w-full"
-            viewBox="0 0 100 24"
-            preserveAspectRatio="none"
-            aria-hidden="true">
-            <polyline
-                :points="points"
-                fill="none"
-                :stroke="stroke"
-                stroke-width="1.2"
-                stroke-linecap="round"
-                stroke-linejoin="round"
-                vector-effect="non-scaling-stroke" />
-        </svg>
-
-        <!-- heater duty cycle -->
         <div v-if="heater.kind !== 'sensor'" class="col-span-2 flex items-center gap-2">
             <Progress
                 :model-value="Math.round(heater.power * 100)"

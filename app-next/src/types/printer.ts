@@ -1,7 +1,5 @@
 /** Klipper objects keyed exactly as Moonraker reports them. */
-export interface PrinterState {
-    [objectName: string]: unknown
-}
+export type KlipperObjects = Record<string, unknown>
 
 export type HeaterKind = 'hotend' | 'bed' | 'sensor'
 
@@ -17,12 +15,23 @@ export interface Heater {
     minTemp: number | null
 }
 
+export type PrintState = 'standby' | 'printing' | 'paused' | 'complete' | 'cancelled' | 'error'
+
 export interface PrintStats {
     filename: string
-    state: 'standby' | 'printing' | 'paused' | 'complete' | 'cancelled' | 'error'
+    state: PrintState
     message: string
     total_duration: number
     print_duration: number
     filament_used: number
     info: { total_layer: number | null; current_layer: number | null }
+}
+
+export type KlippyState = 'ready' | 'startup' | 'shutdown' | 'error' | 'disconnected'
+
+export interface PrinterInfo {
+    state?: KlippyState
+    state_message?: string
+    hostname?: string
+    software_version?: string
 }

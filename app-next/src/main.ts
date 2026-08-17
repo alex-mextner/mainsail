@@ -1,21 +1,15 @@
 import { createApp } from 'vue'
+import { createPinia } from 'pinia'
 import App from './App.vue'
+import { router } from './router'
 import './assets/index.css'
-import { store, attachSocketClient } from './store'
-import { createWebSocketPlugin } from './plugins/webSocketClient'
+import { useConnectionStore } from './stores/connection'
 
-/**
- * In dev the websocket goes through the Vite proxy on this same origin (see
- * vite.config.ts), which keeps Moonraker's Origin check happy. In production
- * the bundle is served by the printer itself, so the same relative URL is
- * already correct.
- */
-const protocol = window.location.protocol === 'https:' ? 'wss' : 'ws'
-const url = `${protocol}://${window.location.host}/websocket`
+const app = createApp(App)
+app.use(createPinia())
+app.use(router)
+app.mount('#app')
 
-const websocket = createWebSocketPlugin({ url, store, reconnectInterval: 2000 })
-attachSocketClient(websocket.socket)
-
-createApp(App).use(store).use(websocket).mount('#app')
-
-websocket.socket.connect()
+// Connect after mount so the shell paints immediately and the connection state
+// is visible while it happens, rather than the page sitting blank.
+useConnectionStore().connect()

@@ -1,65 +1,47 @@
 <script setup lang="ts">
 import { computed } from 'vue'
-import { useStore } from 'vuex'
-import { Thermometer } from 'lucide-vue-next'
+import { mdiThermometer } from '@mdi/js'
 import { Card, CardHeader, CardTitle, CardContent } from '@/components/ui/card'
-import { Badge } from '@/components/ui/badge'
+import MdiIcon from '@/components/ui/MdiIcon.vue'
 import TemperatureRow from './TemperatureRow.vue'
-import { useTemperatureHistory } from '@/composables/useTemperatureHistory'
-import type { Heater } from '@/store/printer/types'
-import type { RootState } from '@/store/types'
+import TemperatureChart from './TemperatureChart.vue'
+import { usePrinterStore } from '@/stores/printer'
+import { useConnectionStore } from '@/stores/connection'
 
-const store = useStore<RootState>()
+const printer = usePrinterStore()
+const connection = useConnectionStore()
 
-const heaters = computed<Heater[]>(() => store.getters['printer/getHeaters'] ?? [])
-const sensors = computed<Heater[]>(() => store.getters['printer/getSensors'] ?? [])
-const all = computed<Heater[]>(() => [...heaters.value, ...sensors.value])
-
-const { history } = useTemperatureHistory(all)
-
-const connection = computed(() => store.getters['socket/getConnectionState'] as string)
-const klippyState = computed(() => store.state.socket.klippyState as string | null)
-
-const connectionBadge = computed(() => {
-    if (connection.value !== 'connected') return { label: connection.value, variant: 'muted' as const }
-    if (klippyState.value === 'ready') return { label: 'ready', variant: 'ok' as const }
-    return { label: klippyState.value ?? 'unknown', variant: 'heating' as const }
-})
+const hasAny = computed(() => printer.allTemperatures.length > 0)
 </script>
 
 <template>
     <Card>
         <CardHeader>
             <CardTitle class="flex items-center gap-2">
-                <Thermometer class="text-muted-foreground size-4" />
+                <MdiIcon :path="mdiThermometer" class="text-muted-foreground size-4" />
                 Temperature
             </CardTitle>
-            <Badge :variant="connectionBadge.variant">{{ connectionBadge.label }}</Badge>
         </CardHeader>
 
-        <CardContent>
-            <p v-if="!all.length" class="text-muted-foreground py-6 text-center text-sm">
-                {{ connection === 'connected' ? 'Waiting for Klipper objects…' : 'Connecting to Moonraker…' }}
+        <CardContent class="flex flex-col gap-dgap">
+            <p v-if="!hasAny" class="text-muted-foreground py-6 text-center text-sm">
+                {{ connection.isConnected ? 'Waiting for Klipper objects…' : 'Connecting to Moonraker…' }}
             </p>
 
-            <div v-else class="divide-border divide-y">
-                <TemperatureRow
-                    v-for="heater in heaters"
-                    :key="heater.name"
-                    :heater="heater"
-                    :series="history[heater.name] ?? []" />
+            <template v-else>
+                <div class="divide-border divide-y">
+                    <TemperatureRow v-for="heater in printer.heaters" :key="heater.name" :heater="heater" />
+                </div>
 
-                <template v-if="sensors.length">
-                    <p class="text-muted-foreground pt-4 pb-1 text-[11px] font-medium tracking-wide uppercase">
+                <TemperatureChart />
+
+                <div v-if="printer.sensors.length" class="divide-border divide-y border-t pt-2">
+                    <p class="text-muted-foreground pt-1 pb-1 text-[11px] font-medium tracking-wide uppercase">
                         Sensors
                     </p>
-                    <TemperatureRow
-                        v-for="sensor in sensors"
-                        :key="sensor.name"
-                        :heater="sensor"
-                        :series="history[sensor.name] ?? []" />
-                </template>
-            </div>
+                    <TemperatureRow v-for="sensor in printer.sensors" :key="sensor.name" :heater="sensor" />
+                </div>
+            </template>
         </CardContent>
     </Card>
 </template>

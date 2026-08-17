@@ -1,7 +1,7 @@
 import { ref, computed, watch } from 'vue'
-import { useStore } from 'vuex'
-import type { RootState } from '@/store/types'
-import type { PrintStats } from '@/store/printer/types'
+import { storeToRefs } from 'pinia'
+import { usePrinterStore } from '@/stores/printer'
+import { useConnectionStore } from '@/stores/connection'
 
 export interface GcodeThumbnail {
     width: number
@@ -20,19 +20,20 @@ export interface GcodeMeta {
 }
 
 /**
- * Metadata for whatever file `print_stats` is pointing at, fetched once per
- * filename change (it cannot change while a file is printing).
+ * Metadata for whatever file `print_stats` points at, fetched once per filename
+ * change (it cannot change while a file is printing).
  *
  * Thumbnails are produced by the slicer and embedded in the gcode; Moonraker
  * extracts them to `.thumbs/`. This printer's files top out at 300x300, so any
- * display larger than that is an upscale -- see `thumbnailUrl`.
+ * larger display is an upscale -- surfaced in the UI rather than hidden.
  */
 export function useCurrentFile() {
-    const store = useStore<RootState>()
-    const meta = ref<GcodeMeta | null>(null)
+    const printer = usePrinterStore()
+    const connection = useConnectionStore()
+    const { printStats } = storeToRefs(printer)
 
-    const printStats = computed<PrintStats | null>(() => store.getters['printer/getPrintStats'])
-    const filename = computed(() => printStats.value?.filename || '')
+    const meta = ref<GcodeMeta | null>(null)
+    const filename = computed(() => printStats.value?.filename ?? '')
 
     watch(
         filename,
@@ -40,25 +41,16 @@ export function useCurrentFile() {
             meta.value = null
             if (!name) return
 
-            const socket = store.getters.socketClient
-            if (!socket) return
-
-            try {
-                meta.value = await socket.emitAndWait('server.files.metadata', { filename: name })
-            } catch {
-                // A file can vanish between the status update and this call.
-                meta.value = null
-            }
+            meta.value = await connection.call<GcodeMeta>('server.files.metadata', { filename: name }).catch(() => null)
         },
         { immediate: true }
     )
 
-    /** Largest available thumbnail, and whether showing it bigger is an upscale. */
+    /** Largest available thumbnail. */
     const thumbnail = computed(() => {
         const list = meta.value?.thumbnails ?? []
         if (!list.length) return null
-
-        return list.reduce((best, t) => (t.width > best.width ? t : best), list[0])
+        return list.reduce((best, item) => (item.width > best.width ? item : best), list[0])
     })
 
     const thumbnailUrl = computed(() => {
@@ -79,7 +71,6 @@ export function useCurrentFile() {
         if (stats.state === 'complete') return 100
         if (stats.state !== 'printing' && stats.state !== 'paused') return 0
 
-        // Prefer the slicer's own time estimate; fall back to filament used.
         const estimated = meta.value?.estimated_time ?? 0
         if (estimated > 0 && stats.print_duration > 0) {
             return Math.min(100, Math.round((stats.print_duration / estimated) * 100))
