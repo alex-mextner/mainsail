@@ -1,9 +1,16 @@
 import { ref, computed } from 'vue'
 import { defineStore } from 'pinia'
-import { MoonrakerClient, defaultMoonrakerUrl, type ConnectionState } from '@/lib/moonraker/client'
+import { MoonrakerClient, defaultMoonrakerUrl, type ConnectionState, type RpcError } from '@/lib/moonraker/client'
 import { usePrinterStore } from './printer'
 import { useTempHistoryStore } from './tempHistory'
 import type { KlippyState, PrinterInfo } from '@/types/printer'
+
+/** One line of the g-code console: what was sent, or what Klipper said back. */
+export interface ConsoleLine {
+    time: number
+    message: string
+    type: 'command' | 'response' | 'error'
+}
 
 /**
  * Owns the Moonraker connection and the Klippy lifecycle.
@@ -110,6 +117,13 @@ export const useConnectionStore = defineStore('connection', () => {
                     tempHistory.record()
                     break
 
+                case 'notify_gcode_response': {
+                    // Klipper's own words -- refusals, RESPOND output, M117 echoes.
+                    const line = String(params[0] ?? '')
+                    recordConsole(line, line.startsWith('!!') ? 'error' : 'response')
+                    break
+                }
+
                 case 'notify_klippy_ready':
                     klippyState.value = 'ready'
                     void subscribeAll()
@@ -157,6 +171,31 @@ export const useConnectionStore = defineStore('connection', () => {
     const isLoading = (key: string) => loadings.value.includes(key)
 
     /**
+     * Console log: what we sent, and everything Klipper said back.
+     *
+     * Klipper reports refusals and RESPOND output through
+     * `notify_gcode_response`, not through the RPC result, so a UI that only
+     * watches call results is deaf to most of what the printer tells it. Lines
+     * beginning `!!` are errors by Klipper's own convention.
+     *
+     * Capped ring buffer: during a print these arrive several times a second,
+     * and an unbounded array on a long-running tablet session is a slow leak.
+     */
+    const MAX_CONSOLE_LINES = 1000
+
+    const consoleLines = ref<ConsoleLine[]>([])
+
+    function recordConsole(message: string, type: ConsoleLine['type']) {
+        consoleLines.value.push({ time: Date.now(), message, type })
+        if (consoleLines.value.length > MAX_CONSOLE_LINES) {
+            consoleLines.value.splice(0, consoleLines.value.length - MAX_CONSOLE_LINES)
+        }
+    }
+
+    /** Most recent error, for panels that want to surface a failure inline. */
+    const lastError = computed(() => [...consoleLines.value].reverse().find((line) => line.type === 'error') ?? null)
+
+    /**
      * Run a g-code script. Every button in every panel goes through here, which
      * is why the echo into the event log lives here too rather than in each
      * caller -- upstream had to remember `server/addEvent` at 40-odd call sites
@@ -165,12 +204,18 @@ export const useConnectionStore = defineStore('connection', () => {
     async function sendGcode(script: string, loadingKey?: string): Promise<void> {
         if (loadingKey && !loadings.value.includes(loadingKey)) loadings.value.push(loadingKey)
 
+        recordConsole(script, 'command')
+
         try {
             await call('printer.gcode.script', { script })
-        } catch {
-            // Klipper rejecting a command is normal (unhomed axis, busy). It is
-            // reported to the user through the console output Moonraker pushes
-            // back, so nothing to do here but stop the spinner.
+        } catch (error) {
+            // NOT swallowed. A rejected command is how Klipper -- and anything
+            // layered on it, such as a config-validating extras module --
+            // explains that it refused and why. Discarding it would leave a
+            // button that silently does nothing, which is the worst outcome:
+            // the user retries instead of reading the reason.
+            const message = (error as RpcError | undefined)?.message ?? 'command rejected'
+            recordConsole(`!! ${message}`, 'error')
         } finally {
             if (loadingKey) loadings.value = loadings.value.filter((key) => key !== loadingKey)
         }
@@ -184,6 +229,8 @@ export const useConnectionStore = defineStore('connection', () => {
         softwareVersion,
         isConnected,
         isReady,
+        consoleLines,
+        lastError,
         statusLabel,
         loadings,
         isLoading,
