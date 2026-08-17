@@ -5,11 +5,21 @@ import { usePrinterStore } from './printer'
 import { useTempHistoryStore } from './tempHistory'
 import type { KlippyState, PrinterInfo } from '@/types/printer'
 
-/** One line of the g-code console: what was sent, or what Klipper said back. */
+/**
+ * One line of the g-code console: what was sent, or what Klipper said back.
+ *
+ * The types are upstream's. `action` and `debug` are Klipper's own `// action:`
+ * and `// debug:` prefixes -- machine-to-client chatter rather than something
+ * said to the operator, which is why the console greys them out.
+ */
+export type ConsoleLineType = 'command' | 'response' | 'error' | 'action' | 'debug' | 'help'
+
 export interface ConsoleLine {
+    /** Monotonic within a session, so a list can key on it without collisions. */
+    id: number
     time: number
     message: string
-    type: 'command' | 'response' | 'error'
+    type: ConsoleLineType
 }
 
 /**
@@ -110,6 +120,38 @@ export const useConnectionStore = defineStore('connection', () => {
         if (store) tempHistory.seed(store)
     }
 
+    /**
+     * Pull the console scrollback Moonraker already holds.
+     *
+     * Without this the console is empty on every page load and only fills with
+     * what happens next, which is worse than useless when you have just walked
+     * up to the machine to find out what it said. Moonraker keeps the last
+     * ~1000 lines in `server.gcode_store`, timestamps and types included.
+     *
+     * Seeded lines are prepended: they are older than anything this session
+     * recorded, and their ids stay below the live ones so ordering by id and
+     * ordering by time agree.
+     */
+    async function seedConsole() {
+        if (!client) return
+
+        const store = await client
+            .call<{ gcode_store?: { message: string; time: number; type: string }[] }>('server.gcode_store')
+            .catch(() => null)
+
+        const entries = store?.gcode_store ?? []
+        if (!entries.length) return
+
+        const seeded: ConsoleLine[] = entries.map((entry, index) => ({
+            id: -entries.length + index,
+            time: Math.round(entry.time * 1000),
+            message: entry.message,
+            type: classify(entry.message, entry.type === 'command' ? 'command' : 'response'),
+        }))
+
+        consoleLines.value = [...seeded, ...consoleLines.value]
+    }
+
     async function loadServerInfo() {
         if (!client) return
 
@@ -120,6 +162,9 @@ export const useConnectionStore = defineStore('connection', () => {
 
     async function initialise() {
         await loadServerInfo()
+        // Before the Klippy check: Moonraker still has the scrollback when
+        // Klipper is down, and that is exactly when you want to read it.
+        await seedConsole()
 
         const info = await loadPrinterInfo()
         if (info?.state !== 'ready') return
@@ -216,17 +261,47 @@ export const useConnectionStore = defineStore('connection', () => {
      *
      * Capped ring buffer: during a print these arrive several times a second,
      * and an unbounded array on a long-running tablet session is a slow leak.
+     *
+     * 🔴 NOTHING IS FILTERED HERE, AND THAT IS A DELIBERATE DIFFERENCE
+     * ---------------------------------------------------------------
+     * Upstream applies the console filters ("hide temperatures", the user's own
+     * regexes) in `server/addEvent`, BEFORE storing. Two consequences it lives
+     * with: turning a filter off cannot bring back lines already discarded, and
+     * the transport has to know about the settings store.
+     *
+     * Here everything is kept and the console filters at render time, so a
+     * toggle is retroactive. The cost is buffer pressure -- a long `M109`
+     * heat-and-wait emits a temperature line a second -- which is why the cap is
+     * 2000 rather than upstream's 1000. At roughly 100 bytes a line that is
+     * 200 kB, which is nothing next to what a single g-code thumbnail costs.
      */
-    const MAX_CONSOLE_LINES = 1000
+    const MAX_CONSOLE_LINES = 2000
 
     const consoleLines = ref<ConsoleLine[]>([])
+    let nextConsoleId = 1
 
-    function recordConsole(message: string, type: ConsoleLine['type']) {
-        consoleLines.value.push({ time: Date.now(), message, type })
+    /**
+     * Klipper marks its own machine-directed chatter with these prefixes, and
+     * errors with `!!`. One place decides what a line is, so the seeded
+     * scrollback and the live stream are classified identically.
+     */
+    function classify(message: string, type: ConsoleLineType): ConsoleLineType {
+        if (type !== 'response') return type
+        if (message.startsWith('!! ')) return 'error'
+        if (message.startsWith('// action:')) return 'action'
+        if (message.startsWith('// debug:')) return 'debug'
+        return 'response'
+    }
+
+    function recordConsole(message: string, type: ConsoleLineType) {
+        consoleLines.value.push({ id: nextConsoleId++, time: Date.now(), message, type: classify(message, type) })
         if (consoleLines.value.length > MAX_CONSOLE_LINES) {
             consoleLines.value.splice(0, consoleLines.value.length - MAX_CONSOLE_LINES)
         }
     }
+
+    /** Local-only echo, for the console's own output (autocomplete, help). */
+    const addConsoleLine = (message: string, type: ConsoleLineType = 'response') => recordConsole(message, type)
 
     /** Most recent error, for panels that want to surface a failure inline. */
     const lastError = computed(() => [...consoleLines.value].reverse().find((line) => line.type === 'error') ?? null)
@@ -276,5 +351,6 @@ export const useConnectionStore = defineStore('connection', () => {
         call,
         onNotify,
         sendGcode,
+        addConsoleLine,
     }
 })

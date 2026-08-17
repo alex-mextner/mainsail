@@ -107,6 +107,23 @@ export interface GuiState {
             hideMetadataColumns: string[]
         }
     }
+    console: {
+        /** `table` puts newest first; `shell` reads bottom-up like a terminal. */
+        direction: 'table' | 'shell'
+        entryStyle: 'default' | 'compact'
+        autoscroll: boolean
+        /** Hide `ok T:210 B:60` chatter from M105 and heat-and-wait. */
+        hideWaitTemperatures: boolean
+        hideTlCommands: boolean
+        /** Raw means: no prefix stripping, show exactly what came over the wire. */
+        rawOutput: boolean
+        /** User regexes. Each entry hides lines it matches while `enabled`. */
+        filters: { name: string; regex: string; enabled: boolean }[]
+        /** Lines older than this are not shown. Upstream's `cleared_since`. */
+        clearedSince: number
+    }
+    /** Commands typed into the console, oldest first -- the ⇵ history. */
+    gcodeHistory: string[]
     macros: {
         /** `simple` shows one panel with every macro; `expert` shows the
          *  user-defined groups instead. Upstream's own two modes. */
@@ -178,6 +195,17 @@ const defaults = (): GuiState => ({
             hideMetadataColumns: [],
         },
     },
+    console: {
+        direction: 'table',
+        entryStyle: 'default',
+        autoscroll: true,
+        hideWaitTemperatures: true,
+        hideTlCommands: true,
+        rawOutput: false,
+        filters: [],
+        clearedSince: 0,
+    },
+    gcodeHistory: [],
     macros: {
         mode: 'simple',
         hiddenMacros: [],
@@ -266,7 +294,11 @@ export const useGuiStore = defineStore('gui', () => {
 
         let node: Record<string, unknown> = state.value as unknown as Record<string, unknown>
         for (const part of parts) {
-            if (!isPlainObject(node[part])) node[part] = {}
+            // Arrays count as traversable: `console.filters.0.enabled` has to
+            // reach into the array, not replace it with an object. Testing for
+            // a PLAIN object here silently wiped the whole filter list.
+            const next = node[part]
+            if (typeof next !== 'object' || next === null) node[part] = {}
             node = node[part] as Record<string, unknown>
         }
         node[last] = value

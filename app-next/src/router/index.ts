@@ -54,12 +54,12 @@ const routes: RouteRecordRaw[] = [
     {
         name: 'console',
         path: '/console',
-        component: () => import('@/pages/PlaceholderPage.vue'),
+        component: () => import('@/pages/ConsolePage.vue'),
         meta: {
             title: 'Console',
             icon: mdiConsoleLine,
             showInNavi: true,
-            ported: false,
+            ported: true,
             position: 30,
         } satisfies AppRouteMeta,
     },

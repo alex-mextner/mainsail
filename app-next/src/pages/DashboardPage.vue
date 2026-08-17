@@ -6,6 +6,7 @@ import KlippyStatePanel from '@/components/panels/KlippyStatePanel.vue'
 import ExtruderControlPanel from '@/components/panels/ExtruderControlPanel.vue'
 import MacrosPanel from '@/components/panels/MacrosPanel.vue'
 import MacrogroupPanel from '@/components/panels/MacrogroupPanel.vue'
+import MiniconsolePanel from '@/components/panels/MiniconsolePanel.vue'
 import PrintStatusPanel from '@/components/panels/PrintStatusPanel.vue'
 import TemperaturePanel from '@/components/panels/TemperaturePanel.vue'
 import ToolheadControlPanel from '@/components/panels/ToolheadControlPanel.vue'
@@ -33,7 +34,7 @@ import ToolheadControlPanel from '@/components/panels/ToolheadControlPanel.vue'
 const { breakpoint } = useBreakpoint()
 const gui = useGuiStore()
 
-type FixedPanel = 'status' | 'temperature' | 'toolhead' | 'extruder' | 'macros'
+type FixedPanel = 'status' | 'temperature' | 'toolhead' | 'extruder' | 'macros' | 'miniconsole'
 
 /** A macro group renders one panel each, so the list cannot be a fixed union. */
 type PanelEntry = { kind: FixedPanel } | { kind: 'macrogroup'; id: string }
@@ -64,6 +65,7 @@ const columns = computed<{ span: string; panels: PanelEntry[] }[]>(() => {
                         { kind: 'extruder' },
                         ...macros,
                         { kind: 'temperature' },
+                        { kind: 'miniconsole' },
                     ],
                 },
             ]
@@ -73,7 +75,7 @@ const columns = computed<{ span: string; panels: PanelEntry[] }[]>(() => {
                     span: 'col-span-6',
                     panels: [{ kind: 'status' }, { kind: 'toolhead' }, { kind: 'extruder' }, ...macros],
                 },
-                { span: 'col-span-6', panels: [{ kind: 'temperature' }] },
+                { span: 'col-span-6', panels: [{ kind: 'temperature' }, { kind: 'miniconsole' }] },
             ]
         case 'desktop':
             return [
@@ -81,13 +83,16 @@ const columns = computed<{ span: string; panels: PanelEntry[] }[]>(() => {
                     span: 'col-span-5',
                     panels: [{ kind: 'status' }, { kind: 'toolhead' }, { kind: 'extruder' }, ...macros],
                 },
-                { span: 'col-span-7', panels: [{ kind: 'temperature' }] },
+                { span: 'col-span-7', panels: [{ kind: 'temperature' }, { kind: 'miniconsole' }] },
             ]
         case 'widescreen':
             return [
                 { span: 'col-span-3', panels: [{ kind: 'status' }] },
                 { span: 'col-span-5', panels: [{ kind: 'toolhead' }, { kind: 'extruder' }, ...macros] },
-                { span: 'col-span-4', panels: [{ kind: 'temperature' }] },
+                // Upstream's widescreen third column is webcam + miniconsole;
+                // the webcam panel is not ported yet, so the console has it to
+                // itself for now.
+                { span: 'col-span-4', panels: [{ kind: 'temperature' }, { kind: 'miniconsole' }] },
             ]
     }
 })
@@ -116,6 +121,7 @@ const keyOf = (panel: PanelEntry) => (panel.kind === 'macrogroup' ? `macrogroup-
                     <MacrosPanel v-else-if="panel.kind === 'macros'" />
                     <MacrogroupPanel v-else-if="panel.kind === 'macrogroup'" :group-id="panel.id" />
                     <TemperaturePanel v-else-if="panel.kind === 'temperature'" />
+                    <MiniconsolePanel v-else-if="panel.kind === 'miniconsole'" />
                 </template>
             </div>
         </div>
