@@ -110,19 +110,22 @@ const isUpscaled = computed(() => (thumbnail.value?.width ?? 0) < 420)
             <dl class="grid grid-cols-3 gap-3 text-center">
                 <div>
                     <dt class="text-muted-foreground flex items-center justify-center gap-1 text-[11px]">
-                        <Layers class="size-3" /> Layer
+                        <Layers class="size-3" />
+                        Layer
                     </dt>
                     <dd class="tabular mt-1 text-sm font-medium">{{ layer }}</dd>
                 </div>
                 <div>
                     <dt class="text-muted-foreground flex items-center justify-center gap-1 text-[11px]">
-                        <Clock class="size-3" /> Elapsed
+                        <Clock class="size-3" />
+                        Elapsed
                     </dt>
                     <dd class="tabular mt-1 text-sm font-medium">{{ elapsed }}</dd>
                 </div>
                 <div>
                     <dt class="text-muted-foreground flex items-center justify-center gap-1 text-[11px]">
-                        <Ruler class="size-3" /> Remaining
+                        <Ruler class="size-3" />
+                        Remaining
                     </dt>
                     <dd class="tabular mt-1 text-sm font-medium">{{ remaining }}</dd>
                 </div>

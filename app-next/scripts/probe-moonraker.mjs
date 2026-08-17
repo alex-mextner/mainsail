@@ -64,7 +64,8 @@ ws.onopen = async () => {
     const objects = list.objects ?? []
     console.log(`objects    ${objects.length} exposed`)
     const heaterish = objects.filter(
-        (o) => o === 'extruder' || o === 'heater_bed' || o.startsWith('temperature_sensor') || o.startsWith('heater_fan')
+        (o) =>
+            o === 'extruder' || o === 'heater_bed' || o.startsWith('temperature_sensor') || o.startsWith('heater_fan')
     )
     console.log(`heaterish  ${heaterish.join(', ')}`)
 
