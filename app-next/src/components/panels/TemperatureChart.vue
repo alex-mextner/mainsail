@@ -42,11 +42,15 @@ const option = computed<EChartsOption>(() => {
     const axis = isDark ? 'rgba(255,255,255,0.45)' : 'rgba(0,0,0,0.45)'
     const split = isDark ? 'rgba(255,255,255,0.08)' : 'rgba(0,0,0,0.08)'
 
-    const names = Object.keys(history.series)
+    // Heaters first, sensors after: with a scrolling legend the first page
+    // should hold the things you actually control, not the host thermometer.
+    const ordered = printer.allTemperatures.map((item) => item.name).filter((name) => name in history.series)
+    const names = [...ordered, ...Object.keys(history.series).filter((name) => !ordered.includes(name))]
 
     const series = names.flatMap((name) => {
         const entry = history.series[name]
         const colour = colourFor(name)
+        const kind = printer.allTemperatures.find((item) => item.name === name)?.kind
 
         const lines: EChartsOption['series'] = [
             {
@@ -60,8 +64,11 @@ const option = computed<EChartsOption>(() => {
             },
         ]
 
-        // Targets only exist for controllable heaters, and only matter when set.
-        if (entry.targets.some((point) => point.value > 0)) {
+        // Targets only for controllable heaters, and only when actually set.
+        // Moonraker's temperature_store also reports a `targets` array for
+        // temperature_fans, which drew dashed step lines for the host and
+        // hotend fans -- noise, since you cannot command those from here.
+        if (kind !== 'sensor' && entry.targets.some((point) => point.value > 0)) {
             lines.push({
                 name: `${labelFor(name)} target`,
                 type: 'line',
