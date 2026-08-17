@@ -37,6 +37,15 @@ const {
 const descending = (steps: number[]) => [...steps].sort((a, b) => b - a)
 const ascending = (steps: number[]) => [...steps].sort((a, b) => a - b)
 
+/**
+ * Upstream colours these `primary` when satisfied and `warning` when not, and
+ * both are SOLID fills on a Vuetify `v-btn` -- the amber is meant to be seen
+ * across the room, not read as a subtle outline. Expressed explicitly here so
+ * the fill is a decision rather than a side effect of class merging.
+ */
+const stateClass = (ok: boolean) =>
+    ok ? 'bg-primary text-primary-foreground hover:bg-primary/90' : 'bg-warn text-background hover:bg-warn/90'
+
 const rows = computed(() => [
     {
         axis: 'X',
@@ -72,8 +81,7 @@ const rows = computed(() => [
             <Button
                 size="sm"
                 :disabled="isPrinting || isLoading('homeAll')"
-                :variant="homedAxes.includes('xyz') ? 'default' : 'outline'"
-                :class="homedAxes.includes('xyz') ? '' : 'border-warn text-warn'"
+                :class="stateClass(homedAxes.includes('xyz'))"
                 @click="doHome">
                 <MdiIcon :path="mdiHome" class="size-4" />
                 ALL
@@ -83,8 +91,7 @@ const rows = computed(() => [
                 v-if="enableXYHoming"
                 size="sm"
                 :disabled="isPrinting || isLoading('homeXY')"
-                :variant="homedAxes.includes('xy') ? 'default' : 'outline'"
-                :class="homedAxes.includes('xy') ? '' : 'border-warn text-warn'"
+                :class="stateClass(homedAxes.includes('xy'))"
                 @click="doHomeXY">
                 <MdiIcon :path="mdiHome" class="size-4" />
                 XY
@@ -94,8 +101,7 @@ const rows = computed(() => [
                 v-if="capabilities.qgl"
                 size="sm"
                 :disabled="isPrinting || isLoading('qgl')"
-                :variant="qglState === 'ok' ? 'default' : 'outline'"
-                :class="qglState === 'ok' ? '' : 'border-warn text-warn'"
+                :class="stateClass(qglState === 'ok')"
                 @click="doQGL">
                 QGL
             </Button>
@@ -104,8 +110,7 @@ const rows = computed(() => [
                 v-if="capabilities.zTilt"
                 size="sm"
                 :disabled="isPrinting || isLoading('zTilt')"
-                :variant="zTiltState === 'ok' ? 'default' : 'outline'"
-                :class="zTiltState === 'ok' ? '' : 'border-warn text-warn'"
+                :class="stateClass(zTiltState === 'ok')"
                 @click="doZtilt">
                 Z-Tilt
             </Button>
@@ -113,8 +118,7 @@ const rows = computed(() => [
             <Button
                 size="sm"
                 :disabled="isPrinting"
-                :variant="homedAxes !== '' ? 'default' : 'outline'"
-                :class="homedAxes !== '' ? '' : 'border-warn text-warn'"
+                :class="stateClass(homedAxes !== '')"
                 aria-label="Motors off"
                 @click="doMotorsOff">
                 <MdiIcon :path="mdiEngineOff" class="size-4" />
