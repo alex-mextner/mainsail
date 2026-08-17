@@ -9,6 +9,13 @@ const props = withDefaults(
         class?: string
         /** Tailwind background class for the filled part. */
         indicatorClass?: string
+        /**
+         * Inline style for the filled part. Needed because the heater colours
+         * are per-sensor hex values from Mainsail's palette, not a fixed set of
+         * Tailwind classes -- there is no class to name for "whatever colour
+         * this sensor was assigned".
+         */
+        indicatorStyle?: Record<string, string>
     }>(),
     { modelValue: 0 }
 )
@@ -23,6 +30,6 @@ const props = withDefaults(
              almost always mid-animation and disagreeing with its own label. -->
         <ProgressIndicator
             :class="cn('bg-primary h-full w-full flex-1 transition-transform duration-150', props.indicatorClass)"
-            :style="`transform: translateX(-${100 - (props.modelValue ?? 0)}%)`" />
+            :style="[{ transform: `translateX(-${100 - (props.modelValue ?? 0)}%)` }, props.indicatorStyle ?? {}]" />
     </ProgressRoot>
 </template>

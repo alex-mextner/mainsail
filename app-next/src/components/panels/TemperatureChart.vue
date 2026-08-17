@@ -9,6 +9,7 @@ import type { EChartsOption } from 'echarts'
 import { useTempHistoryStore } from '@/stores/tempHistory'
 import { usePrinterStore } from '@/stores/printer'
 import { useTheme } from '@/composables/useTheme'
+import { useSensorColors } from '@/composables/useSensorColors'
 
 /**
  * The real temperature chart: every heater and sensor as its own series, dashed
@@ -27,13 +28,13 @@ const { resolved: theme } = useTheme()
 
 const chart = shallowRef<InstanceType<typeof VChart> | null>(null)
 
-/** Same role-based colours as the rest of the UI, read from the CSS tokens so
- *  the chart cannot drift from the panel next to it. */
-const colourFor = (name: string): string => {
-    const item = printer.allTemperatures.find((entry) => entry.name === name)
-    const token = item?.kind === 'bed' ? '--heater-bed' : item?.kind === 'hotend' ? '--heater-hot' : '--sensor'
-    return getComputedStyle(document.documentElement).getPropertyValue(token).trim() || '#888'
-}
+/**
+ * Mainsail's own per-series colours, so a reading that is red in the working
+ * interface is red here too. Previously this was role-based -- one colour for
+ * every sensor -- which drew electronics_fan, hotend_fan and OrangePi_CPU as
+ * three identical violet lines. See lib/sensorColors.ts.
+ */
+const { colorOf: colourFor } = useSensorColors()
 
 const labelFor = (name: string): string => printer.allTemperatures.find((entry) => entry.name === name)?.label ?? name
 
@@ -52,12 +53,29 @@ const option = computed<EChartsOption>(() => {
         const colour = colourFor(name)
         const kind = printer.allTemperatures.find((item) => item.name === name)?.kind
 
+        /**
+         * Heaters are drawn ON TOP of sensors.
+         *
+         * On this machine `temperature_fan hotend_fan` measures the hotend, so
+         * it tracks the Extruder reading almost exactly. echarts paints in array
+         * order, and the legend has to stay heaters-first, so with plain
+         * ordering the fan line covered the Extruder line completely and a
+         * reading simply vanished from the chart -- confirmed on the light
+         * theme, where teal over red is obvious. `z` decouples paint order from
+         * series order, which is what fixes it without reshuffling the legend.
+         *
+         * The duplication itself is deliberate and stays: the user asked for
+         * both readings to remain visible, not to be merged.
+         */
+        const z = kind === 'sensor' ? 2 : 3
+
         const lines: EChartsOption['series'] = [
             {
                 name: labelFor(name),
                 type: 'line',
                 showSymbol: false,
                 smooth: 0.2,
+                z,
                 lineStyle: { width: 2, color: colour },
                 itemStyle: { color: colour },
                 data: entry.temperatures.map((point) => [point.time, point.value]),
@@ -73,6 +91,7 @@ const option = computed<EChartsOption>(() => {
                 name: `${labelFor(name)} target`,
                 type: 'line',
                 showSymbol: false,
+                z: z + 1,
                 lineStyle: { width: 1, type: 'dashed', color: colour, opacity: 0.7 },
                 itemStyle: { color: colour },
                 data: entry.targets.map((point) => [point.time, point.value]),

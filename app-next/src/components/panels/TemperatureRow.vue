@@ -5,6 +5,7 @@ import { Badge } from '@/components/ui/badge'
 import { Progress } from '@/components/ui/progress'
 import MdiIcon from '@/components/ui/MdiIcon.vue'
 import type { Heater } from '@/types/printer'
+import { useSensorColors } from '@/composables/useSensorColors'
 
 const props = defineProps<{ heater: Heater }>()
 
@@ -14,12 +15,12 @@ const icon = computed(() => {
     return mdiThermometer
 })
 
-/** One accent per role, matching the tokens in assets/index.css. */
-const accent = computed(() => {
-    if (props.heater.kind === 'bed') return 'text-heater-bed'
-    if (props.heater.kind === 'hotend') return 'text-heater-hot'
-    return 'text-sensor'
-})
+/**
+ * The same colour this sensor has on the chart -- Mainsail's, per series rather
+ * than per role, so the row icon and the chart legend identify the same line.
+ */
+const { colorOf } = useSensorColors()
+const accent = computed(() => colorOf(props.heater.name))
 
 const isActive = computed(() => props.heater.target > 0)
 
@@ -44,7 +45,7 @@ const state = computed(() => {
 <template>
     <div class="grid grid-cols-[1fr_auto] items-center gap-x-dgap gap-y-2 py-drow">
         <div class="flex min-w-0 items-center gap-2">
-            <MdiIcon :path="icon" :class="['size-4 shrink-0', accent]" />
+            <MdiIcon :path="icon" class="size-4 shrink-0" :style="{ color: accent }" />
             <span class="truncate text-sm font-medium">{{ heater.label }}</span>
             <Badge v-if="state" :variant="state.variant">{{ state.label }}</Badge>
         </div>
@@ -61,7 +62,7 @@ const state = computed(() => {
             <Progress
                 :model-value="Math.round(heater.power * 100)"
                 class="h-1"
-                :indicator-class="heater.kind === 'bed' ? 'bg-heater-bed' : 'bg-heater-hot'" />
+                :indicator-style="{ backgroundColor: accent }" />
             <span class="text-muted-foreground tabular w-10 shrink-0 text-right text-[11px]">
                 {{ Math.round(heater.power * 100) }}%
             </span>

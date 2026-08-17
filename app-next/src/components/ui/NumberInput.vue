@@ -70,9 +70,7 @@ const value = computed(() => {
 const errors = computed<string[]>(() => {
     if (Number.isNaN(value.value)) return ['Not a number']
     if (props.max === null) return value.value < props.min ? [`Must be ${props.min} or more`] : []
-    return value.value > props.max || value.value < props.min
-        ? [`Must be between ${props.min} and ${props.max}`]
-        : []
+    return value.value > props.max || value.value < props.min ? [`Must be between ${props.min} and ${props.max}`] : []
 })
 
 const round = (input: number) => Math.round(input * 10 ** props.dec) / 10 ** props.dec
