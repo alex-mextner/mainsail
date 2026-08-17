@@ -14,7 +14,14 @@
         "noEmit": true,
         "types": ["node"],
         "baseUrl": ".",
-        "paths": { "@/*": ["./src/*"] }
+        "paths": {
+            "@/*": ["./src/*"],
+            // vuex 4 ships types at types/index.d.ts but does not list them in
+            // its package.json "exports", so bundler-style resolution cannot
+            // see them and every store callback degrades to implicit `any`.
+            // Point TS at the file directly.
+            "vuex": ["./node_modules/vuex/types/index.d.ts"]
+        }
     },
     "include": ["src/**/*.ts", "src/**/*.d.ts", "src/**/*.vue", "vite.config.ts"]
 }
