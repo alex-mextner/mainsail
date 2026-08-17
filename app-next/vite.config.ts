@@ -40,6 +40,21 @@ export default defineConfig({
             '/machine': { target: moonrakerHost, changeOrigin: true },
         },
     },
+    // `vite preview` serves the built bundle. It needs the same proxy as the dev
+    // server, otherwise the production artifact can only be tested on the
+    // printer itself -- and "it builds" would never get upgraded to "it runs".
+    preview: {
+        host: '127.0.0.1',
+        port: 5274,
+        proxy: {
+            '/websocket': { target: moonrakerWs, ws: true, changeOrigin: true },
+            '/printer': { target: moonrakerHost, changeOrigin: true },
+            '/server': { target: moonrakerHost, changeOrigin: true },
+            '/api': { target: moonrakerHost, changeOrigin: true },
+            '/access': { target: moonrakerHost, changeOrigin: true },
+            '/machine': { target: moonrakerHost, changeOrigin: true },
+        },
+    },
     build: {
         // The production bundle is served by the printer itself, from the same
         // origin as Moonraker, so no proxy is involved there.
