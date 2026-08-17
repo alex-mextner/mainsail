@@ -1096,6 +1096,21 @@
             "ErrorWhileConnecting": "Error while connecting to {url}",
             "FPS": "FPS",
             "Headline": "Webcam",
+            "Hud": {
+                "Bed": "Bed",
+                "Close": "Close",
+                "ETA": "ETA",
+                "Expand": "Expand webcam",
+                "Fullscreen": "Fullscreen",
+                "HideHud": "Hide overlay",
+                "Layer": "Layer",
+                "NoFile": "No file loaded",
+                "Nozzle": "Nozzle",
+                "Remaining": "Remaining",
+                "ShowHud": "Show overlay",
+                "Speed": "Speed",
+                "Target": "target"
+            },
             "NoWebcam": "No webcam available. Add a webcam under \"Interface Settings\" -> \"Webcams\".",
             "UnknownWebcamService": "Unknown Webcam Service"
         },
