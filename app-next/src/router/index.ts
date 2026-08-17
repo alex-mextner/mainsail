@@ -78,12 +78,12 @@ const routes: RouteRecordRaw[] = [
     {
         name: 'files',
         path: '/files',
-        component: () => import('@/pages/PlaceholderPage.vue'),
+        component: () => import('@/pages/FilesPage.vue'),
         meta: {
             title: 'G-Code Files',
             icon: mdiFileDocumentMultipleOutline,
             showInNavi: true,
-            ported: false,
+            ported: true,
             position: 50,
         } satisfies AppRouteMeta,
     },

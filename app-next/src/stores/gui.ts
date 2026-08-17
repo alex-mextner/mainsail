@@ -95,6 +95,17 @@ export interface GuiState {
             showFirmwareRetraction: boolean
             showExtruderControl: boolean
         }
+        gcodefiles: {
+            /** Path relative to the gcodes root; '' is the root. */
+            currentPath: string
+            search: string
+            showHiddenFiles: boolean
+            showPrintedFiles: boolean
+            sortBy: string
+            sortDesc: boolean
+            /** Metadata columns the user switched off, by field name. */
+            hideMetadataColumns: string[]
+        }
     }
     macros: {
         /** `simple` shows one panel with every macro; `expert` shows the
@@ -152,6 +163,19 @@ const defaults = (): GuiState => ({
             showPressureAdvance: true,
             showFirmwareRetraction: true,
             showExtruderControl: true,
+        },
+        gcodefiles: {
+            currentPath: '',
+            search: '',
+            showHiddenFiles: false,
+            showPrintedFiles: true,
+            // Upstream's defaults: newest first is what you want after slicing.
+            sortBy: 'modified',
+            sortDesc: true,
+            // Everything the machine reports is shown until switched off. On a
+            // narrow screen the table scrolls rather than dropping columns, so
+            // hiding is the user's choice, not the layout's.
+            hideMetadataColumns: [],
         },
     },
     macros: {

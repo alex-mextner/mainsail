@@ -47,7 +47,22 @@ const hasButtons = computed(() => !!slots.buttons)
 
 <template>
     <section
-        :class="cn('bg-card text-card-foreground relative flex flex-col rounded-xl border shadow-sm', props.class)"
+        :class="
+            cn(
+                // `overflow-x-clip` and not `overflow-x-hidden`: `hidden` on one
+                // axis forces the other to `auto`, which would turn every panel
+                // into a vertical scroll container. `clip` leaves the y axis
+                // `visible`.
+                //
+                // It is here because a panel whose content is wider than the card
+                // -- the file table is 2500px of columns -- otherwise pushes the
+                // whole PAGE sideways even though the table has its own
+                // `overflow-x-auto`. Measured: document scrollWidth 2783 at a
+                // 1400px viewport, and the page really did scroll.
+                'bg-card text-card-foreground relative flex flex-col overflow-x-clip rounded-xl border shadow-sm',
+                props.class
+            )
+        "
         :data-panel="panelName">
         <!-- Indeterminate progress line, same place Vuetify's card loader sits. -->
         <div v-if="loading" class="bg-primary/20 absolute inset-x-0 top-0 h-0.5 overflow-hidden rounded-t-xl">

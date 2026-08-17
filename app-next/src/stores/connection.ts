@@ -28,8 +28,30 @@ export const useConnectionStore = defineStore('connection', () => {
     const klippyMessage = ref<string | null>(null)
     const hostname = ref<string | null>(null)
     const softwareVersion = ref<string | null>(null)
+    /**
+     * Which optional Moonraker components are loaded. Panels gate on this
+     * rather than assuming: `job_queue`, `history` and `timelapse` are all
+     * optional, and offering a button for a component that is not there
+     * produces an RPC error the user cannot act on.
+     */
+    const moonrakerComponents = ref<string[]>([])
 
     let client: MoonrakerClient | null = null
+
+    /**
+     * Extra notification subscribers, for stores that own their own slice of
+     * Moonraker's push traffic (files, history). They are called for EVERY
+     * notification, after this store's own handling.
+     *
+     * The alternative -- a `case` here per feature -- is what the Vue 2 socket
+     * plugin did, and it is why adding a panel meant editing the transport.
+     */
+    const notificationSubscribers = new Set<(notification: { method: string; params: unknown[] }) => void>()
+
+    function onNotify(handler: (notification: { method: string; params: unknown[] }) => void): () => void {
+        notificationSubscribers.add(handler)
+        return () => notificationSubscribers.delete(handler)
+    }
 
     const isConnected = computed(() => socketState.value === 'connected')
     const isReady = computed(() => isConnected.value && klippyState.value === 'ready')
@@ -88,7 +110,17 @@ export const useConnectionStore = defineStore('connection', () => {
         if (store) tempHistory.seed(store)
     }
 
+    async function loadServerInfo() {
+        if (!client) return
+
+        const info = await client.call<{ components?: string[] }>('server.info').catch(() => null)
+
+        moonrakerComponents.value = info?.components ?? []
+    }
+
     async function initialise() {
+        await loadServerInfo()
+
         const info = await loadPrinterInfo()
         if (info?.state !== 'ready') return
 
@@ -110,7 +142,11 @@ export const useConnectionStore = defineStore('connection', () => {
             }
         })
 
-        client.onNotification(({ method, params }) => {
+        client.onNotification((notification) => {
+            const { method, params } = notification
+
+            for (const subscriber of notificationSubscribers) subscriber(notification)
+
             switch (method) {
                 case 'notify_status_update':
                     printer.applyStatus((params[0] ?? {}) as Record<string, unknown>)
@@ -227,6 +263,7 @@ export const useConnectionStore = defineStore('connection', () => {
         klippyMessage,
         hostname,
         softwareVersion,
+        moonrakerComponents,
         isConnected,
         isReady,
         consoleLines,
@@ -237,6 +274,7 @@ export const useConnectionStore = defineStore('connection', () => {
         connect,
         disconnect,
         call,
+        onNotify,
         sendGcode,
     }
 })
