@@ -178,3 +178,92 @@
         font-variant-numeric: tabular-nums;
     }
 }
+
+/* ---------------------------------------------------------------------------
+   Segmented button group
+
+   Mainsail's `._btn-group`: a row of buttons that reads as one control, with
+   only the outer corners rounded and shared borders between neighbours. Used by
+   the axis jog rows, the Z-offset baby-stepping row and the cross-control step
+   picker, so it lives here once instead of being re-declared per component
+   (upstream duplicated the same 30 lines in three files).
+
+   The 28px height is upstream's; the min-height floor is NOT applied here on
+   purpose -- these are dense grids of up to nine buttons and forcing 44px would
+   push the toolhead panel past a phone screen. They are still comfortably
+   tappable because they stretch to full panel width.
+   --------------------------------------------------------------------------- */
+@layer components {
+    .seg-group {
+        display: inline-flex;
+        width: 100%;
+        min-width: 100%;
+        max-width: 100%;
+        flex-wrap: nowrap;
+        border-radius: var(--radius-md);
+    }
+
+    .seg-btn {
+        display: inline-flex;
+        min-width: 0;
+        flex: 1 1 0%;
+        align-items: center;
+        justify-content: center;
+        gap: 0.25rem;
+        border-width: 1px;
+        border-color: var(--border);
+        background-color: var(--secondary);
+        padding-inline: 0.25rem;
+        height: 28px;
+        font-size: 0.8125rem;
+        line-height: 1;
+        color: var(--secondary-foreground);
+        transition:
+            background-color 120ms,
+            color 120ms;
+    }
+
+    .seg-btn:hover:not(:disabled) {
+        background-color: var(--accent);
+        color: var(--accent-foreground);
+    }
+
+    .seg-btn:disabled {
+        pointer-events: none;
+        opacity: 0.4;
+    }
+
+    .seg-btn:focus-visible {
+        outline: none;
+        box-shadow: 0 0 0 2px var(--ring);
+        position: relative;
+        z-index: 1;
+    }
+
+    .seg-btn:first-child {
+        border-start-start-radius: inherit;
+        border-end-start-radius: inherit;
+    }
+
+    .seg-btn:last-child {
+        border-start-end-radius: inherit;
+        border-end-end-radius: inherit;
+    }
+
+    .seg-btn:not(:first-child) {
+        border-left-width: 0;
+    }
+
+    /* Homed / not homed, the two states every axis button in Mainsail carries. */
+    .seg-btn[data-state='homed'] {
+        background-color: var(--primary);
+        color: var(--primary-foreground);
+        border-color: var(--primary);
+    }
+
+    .seg-btn[data-state='unhomed'] {
+        background-color: var(--warn);
+        color: var(--background);
+        border-color: var(--warn);
+    }
+}

@@ -1,6 +1,6 @@
 import { ref, computed, shallowRef } from 'vue'
 import { defineStore } from 'pinia'
-import type { Heater, PrintStats, KlipperObjects } from '@/types/printer'
+import type { Heater, PrintStats, PrintState, KlipperObjects } from '@/types/printer'
 
 /**
  * Live Klipper object state.
@@ -126,6 +126,79 @@ export const usePrinterStore = defineStore('printer', () => {
             null
     )
 
+    /** Klipper's own state string. Panels gate on this exactly as upstream does. */
+    const printerState = computed<PrintState>(() => printStats.value?.state ?? 'standby')
+
+    const gcodeMove = computed(
+        () =>
+            (objects.value.gcode_move as
+                | {
+                      speed_factor?: number
+                      extrude_factor?: number
+                      absolute_coordinates?: boolean
+                      absolute_extrude?: boolean
+                      gcode_position?: number[]
+                      homing_origin?: number[]
+                      speed?: number
+                  }
+                | undefined) ?? null
+    )
+
+    const motionReport = computed(
+        () => (objects.value.motion_report as { live_position?: number[]; live_velocity?: number } | undefined) ?? null
+    )
+
+    const homedAxes = computed(() => toolhead.value?.homed_axes ?? '')
+
+    /**
+     * Every g-code command Klipper knows, including macros. Newer Klipper
+     * publishes this as `gcode.commands`; the panels use it to decide whether a
+     * command exists before offering a button for it.
+     */
+    const gcodeCommands = computed(
+        () => (objects.value.gcode as { commands?: Record<string, unknown> } | undefined)?.commands ?? null
+    )
+
+    const hasCommand = (name: string): boolean => (gcodeCommands.value ? name in gcodeCommands.value : false)
+
+    const hasConfigSection = (name: string): boolean => name in config.value
+
+    /**
+     * What this particular machine can do, derived from the live config and
+     * command table rather than assumed. Same rules as Mainsail's
+     * `store/printer/getters.ts`, including the Kalico `z_tilt_ng` variant and
+     * the command-table-first / config-fallback order for Z-tilt.
+     */
+    const capabilities = computed(() => ({
+        qgl: hasConfigSection('quad_gantry_level'),
+        zTilt: gcodeCommands.value ? hasCommand('Z_TILT_ADJUST') : hasConfigSection('z_tilt'),
+        bedTilt: hasConfigSection('bed_tilt'),
+        bedScrews: hasConfigSection('bed_screws'),
+        deltaCalibrate: hasConfigSection('delta_calibrate'),
+        screwsTilt: hasConfigSection('screws_tilt_adjust'),
+        firmwareRetraction: hasConfigSection('firmware_retraction'),
+        /** `_CLIENT_LINEAR_MOVE` from mainsail.cfg. Present on this machine, and
+         *  preferred over raw G91/G1 because it honours the print-area limits. */
+        clientLinearMove: hasCommand('_CLIENT_LINEAR_MOVE'),
+        clientExtrude: hasCommand('_CLIENT_EXTRUDE'),
+        clientRetract: hasCommand('_CLIENT_RETRACT'),
+    }))
+
+    /** True while QGL / Z-tilt is out of date, so the button can warn. */
+    const levelingApplied = computed(() => {
+        const qgl = objects.value.quad_gantry_level as { applied?: boolean } | undefined
+        const zTilt = (objects.value.z_tilt ?? objects.value.z_tilt_ng) as { applied?: boolean } | undefined
+
+        return {
+            qgl: qgl?.applied ?? true,
+            zTilt: zTilt?.applied ?? true,
+        }
+    })
+
+    const bedMeshProfile = computed(
+        () => (objects.value.bed_mesh as { profile_name?: string } | undefined)?.profile_name ?? ''
+    )
+
     return {
         objects,
         availableHeaters,
@@ -135,8 +208,18 @@ export const usePrinterStore = defineStore('printer', () => {
         sensors,
         allTemperatures,
         printStats,
+        printerState,
         isPrinting,
         toolhead,
+        gcodeMove,
+        motionReport,
+        homedAxes,
+        gcodeCommands,
+        capabilities,
+        levelingApplied,
+        bedMeshProfile,
+        hasCommand,
+        hasConfigSection,
         applyStatus,
         reset,
     }

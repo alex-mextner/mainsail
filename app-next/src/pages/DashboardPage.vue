@@ -3,6 +3,7 @@ import { computed } from 'vue'
 import { useBreakpoint } from '@/composables/useBreakpoint'
 import PrintStatusPanel from '@/components/panels/PrintStatusPanel.vue'
 import TemperaturePanel from '@/components/panels/TemperaturePanel.vue'
+import ToolheadControlPanel from '@/components/panels/ToolheadControlPanel.vue'
 
 /**
  * Mainsail's dashboard: panels distributed across 1-3 columns depending on the
@@ -14,6 +15,10 @@ import TemperaturePanel from '@/components/panels/TemperaturePanel.vue'
  *   desktop     5 / 7
  *   widescreen  3 / 5 / 4
  *
+ * Panel-to-column assignment follows upstream's default layouts
+ * (store/gui/index.ts, `desktopLayout1` / `desktopLayout2` / `widescreen*`):
+ * the control panels sit in the first column, temperature in the second.
+ *
  * Mainsail lets the user reorder panels and persists that in the Moonraker
  * database. That is not wired up yet, so the order below is the default one;
  * the column-distribution shape is already the same, which is what the
@@ -21,27 +26,27 @@ import TemperaturePanel from '@/components/panels/TemperaturePanel.vue'
  */
 const { breakpoint } = useBreakpoint()
 
-type PanelName = 'status' | 'temperature'
+type PanelName = 'status' | 'temperature' | 'toolhead'
 
 const columns = computed<{ span: string; panels: PanelName[] }[]>(() => {
     switch (breakpoint.value) {
         case 'mobile':
-            return [{ span: 'col-span-12', panels: ['status', 'temperature'] }]
+            return [{ span: 'col-span-12', panels: ['status', 'toolhead', 'temperature'] }]
         case 'tablet':
             return [
-                { span: 'col-span-6', panels: ['status'] },
+                { span: 'col-span-6', panels: ['status', 'toolhead'] },
                 { span: 'col-span-6', panels: ['temperature'] },
             ]
         case 'desktop':
             return [
-                { span: 'col-span-5', panels: ['status'] },
+                { span: 'col-span-5', panels: ['status', 'toolhead'] },
                 { span: 'col-span-7', panels: ['temperature'] },
             ]
         case 'widescreen':
             return [
                 { span: 'col-span-3', panels: ['status'] },
-                { span: 'col-span-5', panels: ['temperature'] },
-                { span: 'col-span-4', panels: [] },
+                { span: 'col-span-5', panels: ['toolhead'] },
+                { span: 'col-span-4', panels: ['temperature'] },
             ]
     }
 })
@@ -52,6 +57,7 @@ const columns = computed<{ span: string; panels: PanelName[] }[]>(() => {
         <div v-for="(column, index) in columns" :key="index" :class="[column.span, 'flex flex-col gap-dgap']">
             <template v-for="panel in column.panels" :key="panel">
                 <PrintStatusPanel v-if="panel === 'status'" />
+                <ToolheadControlPanel v-else-if="panel === 'toolhead'" />
                 <TemperaturePanel v-else-if="panel === 'temperature'" />
             </template>
         </div>

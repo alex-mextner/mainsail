@@ -146,6 +146,36 @@ export const useConnectionStore = defineStore('connection', () => {
         return client.call<T>(method, params)
     }
 
+    /**
+     * Keys of in-flight operations, so a button can show a spinner while its
+     * command runs. Upstream keeps the same idea in `socket.loadings`; here the
+     * key is added when the RPC is sent and removed when Klipper answers, which
+     * is more honest than upstream's timeout-based clearing.
+     */
+    const loadings = ref<string[]>([])
+
+    const isLoading = (key: string) => loadings.value.includes(key)
+
+    /**
+     * Run a g-code script. Every button in every panel goes through here, which
+     * is why the echo into the event log lives here too rather than in each
+     * caller -- upstream had to remember `server/addEvent` at 40-odd call sites
+     * and occasionally didn't.
+     */
+    async function sendGcode(script: string, loadingKey?: string): Promise<void> {
+        if (loadingKey && !loadings.value.includes(loadingKey)) loadings.value.push(loadingKey)
+
+        try {
+            await call('printer.gcode.script', { script })
+        } catch {
+            // Klipper rejecting a command is normal (unhomed axis, busy). It is
+            // reported to the user through the console output Moonraker pushes
+            // back, so nothing to do here but stop the spinner.
+        } finally {
+            if (loadingKey) loadings.value = loadings.value.filter((key) => key !== loadingKey)
+        }
+    }
+
     return {
         socketState,
         klippyState,
@@ -155,8 +185,11 @@ export const useConnectionStore = defineStore('connection', () => {
         isConnected,
         isReady,
         statusLabel,
+        loadings,
+        isLoading,
         connect,
         disconnect,
         call,
+        sendGcode,
     }
 })
