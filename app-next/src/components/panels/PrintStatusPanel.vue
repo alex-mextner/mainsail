@@ -82,7 +82,10 @@ const isUpscaled = computed(() => (thumbnail.value?.width ?? 0) < 420)
                 <img :src="thumbnailUrl" :alt="shortName" class="relative h-full w-full object-contain p-3" />
             </template>
 
-            <div v-else class="text-muted-foreground grid h-full place-items-center gap-2 text-sm">
+            <!-- pb-24 keeps the placeholder clear of the overlay below. Without
+                 it the two collide at S density, where the box is short enough
+                 that a vertically centred placeholder lands under the scrim. -->
+            <div class="text-muted-foreground grid h-full place-items-center gap-2 pb-24 text-sm" v-else>
                 <FileWarning class="size-6" />
                 <span>no preview in this file</span>
             </div>

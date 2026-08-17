@@ -50,7 +50,7 @@ const points = computed(() => sparklinePoints(props.series))
 </script>
 
 <template>
-    <div class="grid grid-cols-[1fr_auto] items-center gap-x-4 gap-y-2 py-3">
+    <div class="grid grid-cols-[1fr_auto] items-center gap-x-dgap gap-y-2 py-drow">
         <!-- name + state -->
         <div class="flex min-w-0 items-center gap-2">
             <component :is="icon" :class="['size-4 shrink-0', accent]" />
@@ -60,7 +60,7 @@ const points = computed(() => sparklinePoints(props.series))
 
         <!-- reading -->
         <div class="flex items-baseline justify-end gap-1">
-            <span class="tabular text-2xl leading-none font-semibold">{{ heater.temperature.toFixed(1) }}</span>
+            <span class="tabular text-reading leading-none font-semibold">{{ heater.temperature.toFixed(1) }}</span>
             <span class="text-muted-foreground text-sm">°C</span>
             <span v-if="isActive" class="text-muted-foreground tabular ml-1 text-sm">
                 / {{ heater.target.toFixed(0) }}°C

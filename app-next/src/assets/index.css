@@ -1,42 +1,51 @@
 @import 'tailwindcss';
 
-/* Tailwind v4 is CSS-first: no tailwind.config.js. Dark mode is driven by a
-   `.dark` class on <html> rather than the OS preference, so the UI can be
-   switched from inside the app (Mainsail is used on a tablet at the machine). */
+/* Tailwind v4 is CSS-first: no tailwind.config.js.
+   Dark mode is driven by a `.dark` class on <html>, set by composables/useTheme.ts.
+   It is a class rather than a bare `prefers-color-scheme` query because the user
+   wants three modes -- system / light / dark -- and an explicit choice has to be
+   able to override the OS. `system` is the default and follows the OS live. */
 @custom-variant dark (&:is(.dark *));
 
-/* shadcn design tokens (slate base). Component sources added later by
-   `npx shadcn-vue add <name>` expect exactly these variable names. */
+/* ---------------------------------------------------------------------------
+   Colour tokens (shadcn names -- `npx shadcn-vue add <x>` expects exactly these)
+   --------------------------------------------------------------------------- */
+
 :root {
     --radius: 0.625rem;
 
-    --background: oklch(1 0 0);
-    --foreground: oklch(0.129 0.042 264.695);
+    --background: oklch(0.995 0.002 247.858);
+    --foreground: oklch(0.21 0.04 264.695);
     --card: oklch(1 0 0);
-    --card-foreground: oklch(0.129 0.042 264.695);
+    --card-foreground: oklch(0.21 0.04 264.695);
     --popover: oklch(1 0 0);
-    --popover-foreground: oklch(0.129 0.042 264.695);
-    --primary: oklch(0.208 0.042 265.755);
-    --primary-foreground: oklch(0.984 0.003 247.858);
+    --popover-foreground: oklch(0.21 0.04 264.695);
+    --primary: oklch(0.48 0.16 255);
+    --primary-foreground: oklch(0.99 0.003 247.858);
     --secondary: oklch(0.968 0.007 247.896);
-    --secondary-foreground: oklch(0.208 0.042 265.755);
+    --secondary-foreground: oklch(0.28 0.042 265.755);
     --muted: oklch(0.968 0.007 247.896);
-    --muted-foreground: oklch(0.554 0.046 257.417);
+    --muted-foreground: oklch(0.48 0.04 257.417);
     --accent: oklch(0.968 0.007 247.896);
-    --accent-foreground: oklch(0.208 0.042 265.755);
-    --destructive: oklch(0.577 0.245 27.325);
-    --destructive-foreground: oklch(0.984 0.003 247.858);
-    --border: oklch(0.929 0.013 255.508);
-    --input: oklch(0.929 0.013 255.508);
-    --ring: oklch(0.704 0.04 256.788);
+    --accent-foreground: oklch(0.28 0.042 265.755);
+    --destructive: oklch(0.52 0.21 27.325);
+    --destructive-foreground: oklch(0.99 0.003 247.858);
+    --border: oklch(0.9 0.014 255.508);
+    --input: oklch(0.9 0.014 255.508);
+    --ring: oklch(0.6 0.05 256.788);
 
-    /* Domain colours: heaters. Deliberately named by role, not by hue, so the
-       temperature chart, the badges and the sparklines cannot drift apart. */
-    --heater-hot: oklch(0.646 0.222 41.116);
-    --heater-bed: oklch(0.6 0.118 184.704);
-    --sensor: oklch(0.6 0.15 285);
-    --ok: oklch(0.65 0.17 145);
-    --warn: oklch(0.75 0.16 85);
+    /* Domain colours, named by role rather than hue so the chart, the badges and
+       the sparklines cannot drift apart.
+       Light-mode values are deliberately DARKER than the dark-mode ones: these
+       are used as foreground (text on a tinted chip, and 1.2px sparkline
+       strokes), and a colour tuned for a dark surface fails on a white one.
+       Verified with a real contrast measurement, not by eye -- see
+       scripts/check-contrast.mjs. */
+    --heater-hot: oklch(0.55 0.19 40);
+    --heater-bed: oklch(0.5 0.11 195);
+    --sensor: oklch(0.5 0.16 285);
+    --ok: oklch(0.5 0.14 148);
+    --warn: oklch(0.52 0.13 75);
 }
 
 .dark {
@@ -51,7 +60,7 @@
     --secondary: oklch(0.279 0.041 260.031);
     --secondary-foreground: oklch(0.984 0.003 247.858);
     --muted: oklch(0.279 0.041 260.031);
-    --muted-foreground: oklch(0.704 0.04 256.788);
+    --muted-foreground: oklch(0.72 0.035 256.788);
     --accent: oklch(0.279 0.041 260.031);
     --accent-foreground: oklch(0.984 0.003 247.858);
     --destructive: oklch(0.704 0.191 22.216);
@@ -60,11 +69,56 @@
     --input: oklch(1 0 0 / 15%);
     --ring: oklch(0.551 0.027 264.364);
 
-    --heater-hot: oklch(0.72 0.19 45);
-    --heater-bed: oklch(0.72 0.13 195);
-    --sensor: oklch(0.72 0.13 285);
-    --ok: oklch(0.72 0.17 148);
-    --warn: oklch(0.8 0.15 85);
+    --heater-hot: oklch(0.75 0.17 45);
+    --heater-bed: oklch(0.78 0.12 195);
+    --sensor: oklch(0.76 0.13 285);
+    --ok: oklch(0.78 0.16 150);
+    --warn: oklch(0.82 0.14 85);
+}
+
+/* ---------------------------------------------------------------------------
+   Density tokens (S / M / L)
+
+   Set as `data-density` on <html> by composables/useDensity.ts. These are
+   cross-cutting on purpose: panels consume `px-dpx`, `gap-dgap`, `text-reading`
+   and so on, so a new panel inherits density for free instead of needing its
+   own breakpoint handling.
+
+   `--density-control` is the minimum height of anything tappable. It never goes
+   below 44px, which is the Apple HIG minimum touch target -- the narrow layout
+   is exactly the case that is most likely to be a tablet at the machine, so
+   shrinking controls there would be backwards.
+   --------------------------------------------------------------------------- */
+
+:root,
+:root[data-density='m'] {
+    --density-pad-x: 1.25rem;
+    --density-pad-y: 0.75rem;
+    --density-gap: 0.75rem;
+    --density-row-y: 0.75rem;
+    --density-reading: 1.875rem;
+    --density-label: 0.75rem;
+    --density-control: 44px;
+}
+
+:root[data-density='s'] {
+    --density-pad-x: 0.875rem;
+    --density-pad-y: 0.5rem;
+    --density-gap: 0.5rem;
+    --density-row-y: 0.5rem;
+    --density-reading: 1.5rem;
+    --density-label: 0.6875rem;
+    --density-control: 44px;
+}
+
+:root[data-density='l'] {
+    --density-pad-x: 1.5rem;
+    --density-pad-y: 1rem;
+    --density-gap: 1rem;
+    --density-row-y: 1rem;
+    --density-reading: 2.25rem;
+    --density-label: 0.8125rem;
+    --density-control: 48px;
 }
 
 @theme inline {
@@ -94,6 +148,14 @@
     --color-ok: var(--ok);
     --color-warn: var(--warn);
 
+    /* density-driven spacing + type scale */
+    --spacing-dpx: var(--density-pad-x);
+    --spacing-dpy: var(--density-pad-y);
+    --spacing-dgap: var(--density-gap);
+    --spacing-drow: var(--density-row-y);
+    --text-reading: var(--density-reading);
+    --text-dlabel: var(--density-label);
+
     --radius-sm: calc(var(--radius) - 4px);
     --radius-md: calc(var(--radius) - 2px);
     --radius-lg: var(--radius);
@@ -111,7 +173,7 @@
             'calt' 1;
     }
     /* Temperatures are read at a glance from a distance; tabular figures stop
-       the digits from jittering as the value changes. */
+       the digits jittering as the value changes. */
     .tabular {
         font-variant-numeric: tabular-nums;
     }

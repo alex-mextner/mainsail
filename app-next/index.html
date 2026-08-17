@@ -1,9 +1,33 @@
 <!doctype html>
-<html lang="en" class="dark">
+<html lang="en">
     <head>
         <meta charset="UTF-8" />
         <meta name="viewport" content="width=device-width, initial-scale=1.0" />
         <title>Mainsail Next</title>
+        <script>
+            // Apply theme and density before first paint. Without this the page
+            // renders light, then Vue mounts and flips it, which is a visible
+            // white flash on a dark tablet standing next to the printer.
+            ;(function () {
+                try {
+                    var theme = localStorage.getItem('mainsail-next.theme') || 'system'
+                    var dark =
+                        theme === 'dark' ||
+                        (theme === 'system' && window.matchMedia('(prefers-color-scheme: dark)').matches)
+                    document.documentElement.classList.toggle('dark', dark)
+                    document.documentElement.style.colorScheme = dark ? 'dark' : 'light'
+
+                    var density = localStorage.getItem('mainsail-next.density') || 'auto'
+                    if (density === 'auto') {
+                        var w = window.innerWidth
+                        density = w < 768 ? 's' : w >= 1280 ? 'l' : 'm'
+                    }
+                    document.documentElement.dataset.density = density
+                } catch (e) {
+                    /* private mode: fall through to the defaults in CSS */
+                }
+            })()
+        </script>
     </head>
     <body>
         <div id="app"></div>
