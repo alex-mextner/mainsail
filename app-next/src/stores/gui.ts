@@ -1,4 +1,4 @@
-import { ref, watch } from 'vue'
+import { computed, ref, watch } from 'vue'
 import { defineStore } from 'pinia'
 
 /**
@@ -28,6 +28,30 @@ import { defineStore } from 'pinia'
 export type ControlStyle = 'bars' | 'cross' | 'circle'
 export type ActionButton = 'motorsOff' | 'qgl' | 'ztilt'
 export type Viewport = 'mobile' | 'tablet' | 'desktop' | 'widescreen'
+
+/** Named colours a macro group can paint its buttons with (upstream's set). */
+export type MacroColor = 'primary' | 'secondary' | 'success' | 'warning' | 'error'
+
+export interface MacrogroupMacro {
+    pos: number
+    name: string
+    /** `group` means "whatever the group is painted with". */
+    color: MacroColor | 'group'
+    showInStandby: boolean
+    showInPrinting: boolean
+    showInPause: boolean
+}
+
+export interface Macrogroup {
+    id: string | null
+    name: string
+    color: MacroColor | 'custom'
+    colorCustom?: string
+    showInStandby: boolean
+    showInPrinting: boolean
+    showInPause: boolean
+    macros?: MacrogroupMacro[]
+}
 
 export interface GuiState {
     control: {
@@ -71,6 +95,14 @@ export interface GuiState {
             showFirmwareRetraction: boolean
             showExtruderControl: boolean
         }
+    }
+    macros: {
+        /** `simple` shows one panel with every macro; `expert` shows the
+         *  user-defined groups instead. Upstream's own two modes. */
+        mode: 'simple' | 'expert'
+        /** Lower-cased names the user hid from the simple panel. */
+        hiddenMacros: string[]
+        macrogroups: Record<string, Macrogroup>
     }
     dashboard: {
         /** Panels the user collapsed, per viewport. Same inverted sense as
@@ -122,6 +154,11 @@ const defaults = (): GuiState => ({
             showExtruderControl: true,
         },
     },
+    macros: {
+        mode: 'simple',
+        hiddenMacros: [],
+        macrogroups: {},
+    },
     dashboard: {
         nonExpandPanels: { mobile: [], tablet: [], desktop: [], widescreen: [] },
     },
@@ -156,7 +193,22 @@ function load(): GuiState {
 
     try {
         const raw = localStorage.getItem(STORAGE_KEY)
-        return raw ? mergeDeep(base, JSON.parse(raw)) : base
+        if (!raw) return base
+
+        const stored = JSON.parse(raw)
+        const merged = mergeDeep(base, stored)
+
+        /**
+         * `macrogroups` is a free-form map: its keys are ids the user created,
+         * not schema. `mergeDeep` drops keys that are absent from the defaults,
+         * which is right for every other branch and exactly wrong for this one --
+         * it would silently delete every group the user ever made. So this one
+         * branch is restored wholesale.
+         */
+        const groups = (stored as { macros?: { macrogroups?: unknown } } | null)?.macros?.macrogroups
+        if (isPlainObject(groups)) merged.macros.macrogroups = groups as Record<string, Macrogroup>
+
+        return merged
     } catch {
         // Corrupt JSON must not take the whole UI down; defaults are always safe.
         return base
@@ -209,9 +261,22 @@ export const useGuiStore = defineStore('gui', () => {
         if (!expanded && index === -1) list.push(name)
     }
 
+    /**
+     * Macro groups with their id filled in, name-sorted case-insensitively --
+     * upstream's `gui/macros/getAllMacrogroups`. The id lives in the map key
+     * upstream, so it has to be folded back into the object for the panels.
+     */
+    const macrogroups = computed<Macrogroup[]>(() =>
+        Object.entries(state.value.macros.macrogroups)
+            .map(([id, group]) => ({ ...group, id }))
+            .sort((a, b) => a.name.toLowerCase().localeCompare(b.name.toLowerCase()))
+    )
+
+    const macrogroup = (id: string): Macrogroup | undefined => state.value.macros.macrogroups[id]
+
     function reset(): void {
         state.value = defaults()
     }
 
-    return { state, saveSetting, isPanelExpanded, setPanelExpanded, reset }
+    return { state, macrogroups, macrogroup, saveSetting, isPanelExpanded, setPanelExpanded, reset }
 })

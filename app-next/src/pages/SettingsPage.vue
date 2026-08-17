@@ -1,9 +1,13 @@
 <script setup lang="ts">
+import { computed, ref } from 'vue'
+import { storeToRefs } from 'pinia'
 import { Card, CardHeader, CardTitle, CardContent } from '@/components/ui/card'
 import SegmentedControl from '@/components/ui/SegmentedControl.vue'
 import { useTheme, type ThemeMode } from '@/composables/useTheme'
 import { useDensity, type DensityMode, DENSITY_BREAKPOINTS } from '@/composables/useDensity'
 import { useConnectionStore } from '@/stores/connection'
+import { usePrinterStore } from '@/stores/printer'
+import { useGuiStore } from '@/stores/gui'
 
 /**
  * Where the appearance controls belong. They previously sat in a permanent bar
@@ -27,6 +31,43 @@ const densityOptions: { value: DensityMode; label: string; title: string }[] = [
     { value: 'm', label: 'M', title: 'Default' },
     { value: 'l', label: 'L', title: 'Roomy' },
 ]
+
+/**
+ * Macros -- Mainsail's `Settings -> Macros`, simple mode
+ * (`SettingsMacrosTabSimple.vue`): search plus one switch per macro, writing
+ * into `gui.macros.hiddenMacros`.
+ *
+ * Expert mode -- the macro GROUP editor, where a group gets a name, a colour
+ * and per-state visibility -- is not ported yet. `MacrogroupPanel` renders
+ * groups correctly, but until this editor exists there is no way to create one
+ * from the UI.
+ */
+const printer = usePrinterStore()
+const gui = useGuiStore()
+const { macros } = storeToRefs(printer)
+
+const macroSearch = ref('')
+
+const filteredMacros = computed(() => {
+    const needle = macroSearch.value.trim().toLowerCase()
+    if (!needle) return macros.value
+    return macros.value.filter((macro) => macro.name.toLowerCase().includes(needle))
+})
+
+const hiddenMacros = computed(() => gui.state.macros.hiddenMacros.map((name) => name.toLowerCase()))
+
+const isMacroVisible = (name: string) => !hiddenMacros.value.includes(name.toLowerCase())
+
+/** Stored lower-cased, because Klipper command names are case-insensitive and
+ *  the panel matches the same way. */
+function toggleMacro(name: string): void {
+    const lower = name.toLowerCase()
+    const list = gui.state.macros.hiddenMacros
+    const index = list.findIndex((entry) => entry.toLowerCase() === lower)
+
+    if (index === -1) list.push(lower)
+    else list.splice(index, 1)
+}
 </script>
 
 <template>
@@ -58,6 +99,47 @@ const densityOptions: { value: DensityMode; label: string; title: string }[] = [
                     </div>
                     <SegmentedControl v-model="densityMode" :options="densityOptions" />
                 </div>
+            </CardContent>
+        </Card>
+
+        <Card v-if="macros.length">
+            <CardHeader><CardTitle>Macros</CardTitle></CardHeader>
+            <CardContent class="flex flex-col gap-3">
+                <p class="text-muted-foreground text-xs">
+                    Which macros appear on the dashboard. Klipper's own helpers — anything starting with an underscore,
+                    and overrides of built-ins such as PAUSE — are never listed here; they are filtered out before this
+                    point.
+                </p>
+
+                <input
+                    v-model="macroSearch"
+                    type="search"
+                    placeholder="Search macros"
+                    aria-label="Search macros"
+                    class="border-input bg-background focus-visible:ring-ring w-full rounded-md border px-3 py-1.5 text-sm outline-none focus-visible:ring-2" />
+
+                <ul class="divide-border divide-y">
+                    <li v-for="macro in filteredMacros" :key="macro.name" class="flex items-start gap-3 py-2">
+                        <input
+                            :id="`macro-visible-${macro.name}`"
+                            type="checkbox"
+                            :checked="isMacroVisible(macro.name)"
+                            class="accent-primary mt-0.5 size-4 shrink-0"
+                            @change="toggleMacro(macro.name)" />
+                        <label :for="`macro-visible-${macro.name}`" class="min-w-0 flex-1 cursor-pointer">
+                            <span class="block text-sm font-medium">{{ macro.name }}</span>
+                            <!-- Klipper's description as text, not a tooltip: the
+                                 tablet at the machine has no hover. -->
+                            <span v-if="macro.description" class="text-muted-foreground block text-xs leading-snug">
+                                {{ macro.description }}
+                            </span>
+                        </label>
+                    </li>
+                </ul>
+
+                <p v-if="!filteredMacros.length" class="text-muted-foreground py-2 text-center text-sm italic">
+                    No macro matches “{{ macroSearch }}”.
+                </p>
             </CardContent>
         </Card>
 

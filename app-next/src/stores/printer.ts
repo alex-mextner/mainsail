@@ -1,6 +1,17 @@
 import { ref, computed, shallowRef } from 'vue'
 import { defineStore } from 'pinia'
 import type { Heater, PrintStats, PrintState, KlipperObjects } from '@/types/printer'
+import { getMacroParams, type MacroParams } from '@/lib/macroParams'
+
+/** One user-facing g-code macro, as the macro buttons need it. */
+export interface PrinterMacro {
+    name: string
+    /** Klipper's `description:`, or null when the macro declares none. */
+    description: string | null
+    gcode: string
+    params: MacroParams
+    variables: Record<string, unknown>
+}
 
 /**
  * Live Klipper object state.
@@ -247,29 +258,45 @@ export const usePrinterStore = defineStore('printer', () => {
      * macros are internal helpers, and anything with `rename_existing` is an
      * override of a built-in (PAUSE, RESUME, CANCEL_PRINT) rather than a button.
      */
-    const macros = computed(() => {
+    const macros = computed<PrinterMacro[]>(() => {
         const prefix = 'gcode_macro '
         const commands = gcodeCommands.value ?? {}
 
-        return Object.keys(objects.value)
-            .filter((key) => key.toLowerCase().startsWith(prefix))
-            .flatMap((key) => {
-                const name = key.slice(prefix.length)
-                if (name.startsWith('_')) return []
+        return (
+            Object.keys(objects.value)
+                .filter((key) => key.toLowerCase().startsWith(prefix))
+                .flatMap<PrinterMacro>((key) => {
+                    const name = key.slice(prefix.length)
+                    if (name.startsWith('_')) return []
 
-                const settings = (config.value[key.toLowerCase()] ?? {}) as Record<string, unknown>
-                if ('rename_existing' in settings) return []
+                    const settings = (config.value[key.toLowerCase()] ?? {}) as Record<string, unknown>
+                    if ('rename_existing' in settings) return []
 
-                return [
-                    {
-                        name,
-                        description: (commands[name.toUpperCase()] as { help?: string } | undefined)?.help ?? null,
-                        gcode: typeof settings.gcode === 'string' ? settings.gcode : '',
-                        variables: (objects.value[key] ?? {}) as Record<string, unknown>,
-                    },
-                ]
-            })
+                    const gcode = typeof settings.gcode === 'string' ? settings.gcode : ''
+
+                    return [
+                        {
+                            name,
+                            description: (commands[name.toUpperCase()] as { help?: string } | undefined)?.help ?? null,
+                            gcode,
+                            // Parsed here rather than in the button, so a panel
+                            // showing forty macros parses each body once per
+                            // config change instead of once per render.
+                            params: getMacroParams({ gcode }),
+                            variables: (objects.value[key] ?? {}) as Record<string, unknown>,
+                        },
+                    ]
+                })
+                // Upstream sorts case-insensitively; without it an all-caps
+                // config lists differently from a mixed-case one.
+                .sort((a, b) => a.name.toLowerCase().localeCompare(b.name.toLowerCase()))
+        )
     })
+
+    const macroByName = (name: string): PrinterMacro | undefined => {
+        const lower = name.toLowerCase()
+        return macros.value.find((macro) => macro.name.toLowerCase() === lower)
+    }
 
     /** T0, T1, ... tool-change commands, numerically ordered (T10 after T9). */
     const toolchangeMacros = computed(() => {
@@ -294,6 +321,7 @@ export const usePrinterStore = defineStore('printer', () => {
         activeExtruderSettings,
         extrudePossible,
         macros,
+        macroByName,
         toolchangeMacros,
         objects,
         availableHeaters,
