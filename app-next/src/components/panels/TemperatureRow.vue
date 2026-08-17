@@ -32,7 +32,12 @@ const isActive = computed(() => props.heater.target > 0)
 /** Within 1 K of target counts as arrived -- Klipper's own settling band. */
 const atTarget = computed(() => isActive.value && Math.abs(props.heater.temperature - props.heater.target) <= 1)
 
+/**
+ * Sensors are read-only, so "off" would be meaningless noise on every row --
+ * they have no target to be off from. Only controllable heaters get a badge.
+ */
 const state = computed(() => {
+    if (props.heater.kind === 'sensor') return null
     if (!isActive.value) return { label: 'off', variant: 'muted' as const }
     if (atTarget.value) return { label: 'at target', variant: 'ok' as const }
     return {
@@ -50,7 +55,7 @@ const points = computed(() => sparklinePoints(props.series))
         <div class="flex min-w-0 items-center gap-2">
             <component :is="icon" :class="['size-4 shrink-0', accent]" />
             <span class="truncate text-sm font-medium">{{ heater.label }}</span>
-            <Badge :variant="state.variant">{{ state.label }}</Badge>
+            <Badge v-if="state" :variant="state.variant">{{ state.label }}</Badge>
         </div>
 
         <!-- reading -->
