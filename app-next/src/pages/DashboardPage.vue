@@ -2,6 +2,7 @@
 import { computed } from 'vue'
 import { useBreakpoint } from '@/composables/useBreakpoint'
 import KlippyStatePanel from '@/components/panels/KlippyStatePanel.vue'
+import ExtruderControlPanel from '@/components/panels/ExtruderControlPanel.vue'
 import PrintStatusPanel from '@/components/panels/PrintStatusPanel.vue'
 import TemperaturePanel from '@/components/panels/TemperaturePanel.vue'
 import ToolheadControlPanel from '@/components/panels/ToolheadControlPanel.vue'
@@ -27,26 +28,26 @@ import ToolheadControlPanel from '@/components/panels/ToolheadControlPanel.vue'
  */
 const { breakpoint } = useBreakpoint()
 
-type PanelName = 'status' | 'temperature' | 'toolhead'
+type PanelName = 'status' | 'temperature' | 'toolhead' | 'extruder'
 
 const columns = computed<{ span: string; panels: PanelName[] }[]>(() => {
     switch (breakpoint.value) {
         case 'mobile':
-            return [{ span: 'col-span-12', panels: ['status', 'toolhead', 'temperature'] }]
+            return [{ span: 'col-span-12', panels: ['status', 'toolhead', 'extruder', 'temperature'] }]
         case 'tablet':
             return [
-                { span: 'col-span-6', panels: ['status', 'toolhead'] },
+                { span: 'col-span-6', panels: ['status', 'toolhead', 'extruder'] },
                 { span: 'col-span-6', panels: ['temperature'] },
             ]
         case 'desktop':
             return [
-                { span: 'col-span-5', panels: ['status', 'toolhead'] },
+                { span: 'col-span-5', panels: ['status', 'toolhead', 'extruder'] },
                 { span: 'col-span-7', panels: ['temperature'] },
             ]
         case 'widescreen':
             return [
                 { span: 'col-span-3', panels: ['status'] },
-                { span: 'col-span-5', panels: ['toolhead'] },
+                { span: 'col-span-5', panels: ['toolhead', 'extruder'] },
                 { span: 'col-span-4', panels: ['temperature'] },
             ]
     }
@@ -69,6 +70,7 @@ const columns = computed<{ span: string; panels: PanelName[] }[]>(() => {
                 <template v-for="panel in column.panels" :key="panel">
                     <PrintStatusPanel v-if="panel === 'status'" />
                     <ToolheadControlPanel v-else-if="panel === 'toolhead'" />
+                    <ExtruderControlPanel v-else-if="panel === 'extruder'" />
                     <TemperaturePanel v-else-if="panel === 'temperature'" />
                 </template>
             </div>

@@ -65,9 +65,11 @@ export interface GuiState {
             showSpeedFactor: boolean
         }
         extruder: {
-            showPressureAdvance: boolean
+            showTools: boolean
             showExtrusionFactor: boolean
-            showFeedamount: boolean
+            showPressureAdvance: boolean
+            showFirmwareRetraction: boolean
+            showExtruderControl: boolean
         }
     }
     dashboard: {
@@ -113,9 +115,11 @@ const defaults = (): GuiState => ({
             showSpeedFactor: true,
         },
         extruder: {
-            showPressureAdvance: true,
+            showTools: true,
             showExtrusionFactor: true,
-            showFeedamount: true,
+            showPressureAdvance: true,
+            showFirmwareRetraction: true,
+            showExtruderControl: true,
         },
     },
     dashboard: {

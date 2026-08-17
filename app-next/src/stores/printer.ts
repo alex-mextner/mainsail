@@ -122,8 +122,15 @@ export const usePrinterStore = defineStore('printer', () => {
     const toolhead = computed(
         () =>
             (objects.value.toolhead as
-                { position?: number[]; homed_axes?: string; max_velocity?: number; max_accel?: number } | undefined) ??
-            null
+                | {
+                      position?: number[]
+                      homed_axes?: string
+                      max_velocity?: number
+                      max_accel?: number
+                      /** Name of the active extruder object, e.g. "extruder1". */
+                      extruder?: string
+                  }
+                | undefined) ?? null
     )
 
     /** Klipper's own state string. Panels gate on this exactly as upstream does. */
@@ -199,7 +206,95 @@ export const usePrinterStore = defineStore('printer', () => {
         () => (objects.value.bed_mesh as { profile_name?: string } | undefined)?.profile_name ?? ''
     )
 
+    /**
+     * Extruders, from the CONFIG rather than from the live object bag: a
+     * multi-extruder machine reports `extruder`, `extruder1`, ... and only the
+     * config carries the per-extruder limits the UI has to respect.
+     * `extruder_stepper` entries deliberately do not match -- they are a
+     * different thing with a different pressure-advance path.
+     */
+    const extruders = computed(() =>
+        Object.keys(config.value)
+            .filter((key) => /^extruder\d?$/.test(key))
+            .sort()
+            .map((key) => ({
+                key,
+                name: `Extruder ${key === 'extruder' ? '0' : key.replace('extruder', '')}`,
+            }))
+    )
+
+    const extruderSteppers = computed(() =>
+        Object.keys(objects.value)
+            .filter((key) => key.startsWith('extruder_stepper '))
+            .sort((a, b) => a.localeCompare(b))
+    )
+
+    const activeExtruder = computed(() => toolhead.value?.extruder ?? 'extruder')
+
+    const activeExtruderSettings = computed(() => config.value[activeExtruder.value])
+
+    /**
+     * Klipper's own answer to "would a G1 E be accepted right now". It is false
+     * below `min_extrude_temp`, so the UI never has to guess a threshold or
+     * compare temperatures itself.
+     */
+    const extrudePossible = computed(
+        () => (objects.value[activeExtruder.value] as { can_extrude?: boolean } | undefined)?.can_extrude ?? false
+    )
+
+    /**
+     * User-facing macros, filtered exactly as upstream does: leading-underscore
+     * macros are internal helpers, and anything with `rename_existing` is an
+     * override of a built-in (PAUSE, RESUME, CANCEL_PRINT) rather than a button.
+     */
+    const macros = computed(() => {
+        const prefix = 'gcode_macro '
+        const commands = gcodeCommands.value ?? {}
+
+        return Object.keys(objects.value)
+            .filter((key) => key.toLowerCase().startsWith(prefix))
+            .flatMap((key) => {
+                const name = key.slice(prefix.length)
+                if (name.startsWith('_')) return []
+
+                const settings = (config.value[key.toLowerCase()] ?? {}) as Record<string, unknown>
+                if ('rename_existing' in settings) return []
+
+                return [
+                    {
+                        name,
+                        description: (commands[name.toUpperCase()] as { help?: string } | undefined)?.help ?? null,
+                        gcode: typeof settings.gcode === 'string' ? settings.gcode : '',
+                        variables: (objects.value[key] ?? {}) as Record<string, unknown>,
+                    },
+                ]
+            })
+    })
+
+    /** T0, T1, ... tool-change commands, numerically ordered (T10 after T9). */
+    const toolchangeMacros = computed(() => {
+        const byNumber = (a: string, b: string) => parseInt(a.slice(1)) - parseInt(b.slice(1))
+
+        if (gcodeCommands.value) {
+            return Object.keys(gcodeCommands.value)
+                .filter((command) => /^T\d+/.test(command))
+                .sort(byNumber)
+        }
+
+        return Object.keys(objects.value)
+            .filter((key) => /^gcode_macro t\d+/.test(key.toLowerCase()))
+            .map((key) => key.slice(key.indexOf(' ') + 1))
+            .sort(byNumber)
+    })
+
     return {
+        extruders,
+        extruderSteppers,
+        activeExtruder,
+        activeExtruderSettings,
+        extrudePossible,
+        macros,
+        toolchangeMacros,
         objects,
         availableHeaters,
         availableSensors,
