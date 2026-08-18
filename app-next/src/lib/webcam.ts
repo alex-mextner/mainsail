@@ -188,3 +188,16 @@ export const WEBCAM_HUD_MIN_ROW_CHART_WIDTH = 1240
 
 /** Distance the hud keeps from the edges when it floats over the image. */
 export const WEBCAM_HUD_MARGIN = 16
+
+/*
+ * How close to an edge the pointer has to be, while dragging the hud, for the
+ * drop to mean "put it into the bar on that edge" rather than "float it at the
+ * nearest of the eight anchors".
+ *
+ * 64px is comfortably clear of every anchor: a floating card is 420px wide and
+ * is grabbed somewhere in its body, so parking it at the left anchor leaves the
+ * pointer around x=226 - four times outside this band. The two gestures cannot
+ * be confused. The POINTER decides and not the card, precisely because the card
+ * is wide enough that its own edge would be ambiguous.
+ */
+export const WEBCAM_HUD_DOCK_ZONE_DEPTH = 64
