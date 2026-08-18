@@ -49,16 +49,24 @@ const OPT_IN_KEY = 'mainsail-next.webcamHudModelOptIn'
  * files, the same number to the second decimal.
  *
  * The scan stops at the first extruding move, so a real print costs almost
- * nothing (3.8 MB `cube_accel4000.gcode`: 0.1 ms); only a file that has none is
- * read to the end, and the largest one here, 3.0 MB of pure motion, takes 9.5 ms.
+ * nothing (3.8 MB `cube_accel4000.gcode`: 0.03 ms); only a file that has none is
+ * read to the end, and the largest one here, 3.0 MB of pure motion, takes < 10 ms.
  *
  * Deliberately narrow: it says "no move in this file ever advances the extruder",
  * which is exactly the sentence the tile then puts on the screen. Anything
  * subtler - a file with moves the renderer still cannot turn into geometry - is
  * left to the catch below and keeps saying "unavailable", because for that case
  * "there is nothing to draw" would be a guess.
+ *
+ * No whitespace is required in front of the E. Every slicer spaces its words and
+ * every file on this machine does too (checked), but `G1X10E5` is legal g-code and
+ * klipper takes it - and the diagnostics here are written by hand. Requiring the
+ * space would answer "no extrusion" for a file that has plenty, which is a worse
+ * lie than the one being fixed. It cannot over-match either: the search is anchored
+ * to a G0/G1 and stops at the comment, so everything it walks is that move's own
+ * words, where E means the extruder and nothing else.
  */
-const EXTRUDING_MOVE = /(?:^|\n)[ \t]*[gG](?:0|1|00|01)(?![0-9.])[^;\n]*?[ \t][eE](-?[0-9]*\.?[0-9]+)/g
+const EXTRUDING_MOVE = /(?:^|\n)[ \t]*[gG](?:0|1|00|01)(?![0-9.])[^;\n]*?[eE](-?[0-9]*\.?[0-9]+)/g
 
 function hasExtrusion(gcode: string): boolean {
     EXTRUDING_MOVE.lastIndex = 0
