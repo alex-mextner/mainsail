@@ -13,6 +13,7 @@ import WebcamFullscreen from '@/components/webcams/WebcamFullscreen.vue'
 import { GuiWebcamStateWebcam } from '@/store/gui/webcams/types'
 import { mdiViewGrid } from '@mdi/js'
 import { Route } from 'vue-router'
+import { attachOvercamLight } from '@/components/webcams/overcam-light-browser'
 
 @Component({
     components: { WebcamFullscreen },
@@ -21,6 +22,15 @@ export default class PageOvercam extends Mixins(BaseMixin) {
     // set by beforeRouteEnter: false when the page was opened directly (bookmark, reload),
     // in which case there is no history entry of ours to go back to
     cameFromApp = false
+
+    /**
+     * The work light lives on THIS page, not in WebcamFullscreen.vue, and that
+     * is a deliberate placement: that component is shared with the dashboard's
+     * own fullscreen button (WebcamPanel.vue), so hanging the light off it
+     * would light the strip whenever anyone maximised the camera from the
+     * dashboard. The request was specifically about opening /overcam.
+     */
+    detachLight: (() => void) | null = null
 
     get webcams(): GuiWebcamStateWebcam[] {
         return this.$store.getters['gui/webcams/getWebcams']
@@ -48,6 +58,23 @@ export default class PageOvercam extends Mixins(BaseMixin) {
             service: 'grid',
             icon: mdiViewGrid,
         } as GuiWebcamStateWebcam
+    }
+
+    mounted() {
+        this.detachLight = attachOvercamLight({
+            transport: {
+                queryObjects: (objects) => this.$socket.emitAndWait('printer.objects.query', { objects }, {}),
+                printerInfo: () => this.$socket.emitAndWait('printer.info', undefined, {}),
+                sendGcode: async (script) => {
+                    await this.$socket.emitAndWait('printer.gcode.script', { script }, {})
+                },
+            },
+        })
+    }
+
+    beforeDestroy() {
+        this.detachLight?.()
+        this.detachLight = null
     }
 
     beforeRouteEnter(_to: Route, from: Route, next: (cb?: (vm: PageOvercam) => void) => void) {

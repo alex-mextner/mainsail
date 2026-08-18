@@ -43,4 +43,24 @@ export interface PrinterRPC {
         /** Current status of all queried objects */
         status: Record<string, unknown>
     }>
+
+    /**
+     * Klippy host state. `state` is one of ready / startup / shutdown / error;
+     * `state_message` carries the reason, which is how a smoke-alarm shutdown is
+     * told apart from an ordinary one (see components/webcams/overcam-light.ts).
+     */
+    'printer.info': () => Promise<{
+        state: string
+        state_message: string
+        hostname: string
+        klipper_path: string
+        config_file: string
+        software_version: string
+    }>
+
+    /** Run a gcode script. Resolves with "ok" once Klipper has executed it. */
+    'printer.gcode.script': (params: {
+        /** The gcode to execute */
+        script: string
+    }) => Promise<string>
 }
