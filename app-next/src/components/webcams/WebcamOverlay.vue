@@ -207,29 +207,21 @@ const dockPlan = computed<DockPlan>(() => {
 
     if (!measurable.value || !frameAspect.value) return idle
 
-    // Automatic. A single untouched bar is tried first, so every window shape
-    // that already docked keeps its centred frame. Only when neither half
-    // reaches the threshold is the frame pushed aside and the hud handed both
-    // bars as one -- the case the thresholds used to reject with the room
-    // sitting right there.
-    if (freeHorizontal.value / 2 >= WEBCAM_HUD_MIN_DOCK_WIDTH) {
-        return {
-            axis: 'vertical',
-            side: verticalSide.value,
-            size: Math.floor(freeHorizontal.value / 2),
-            shift: false,
-        }
-    }
-
-    if (freeVertical.value / 2 >= WEBCAM_HUD_MIN_DOCK_HEIGHT) {
-        return {
-            axis: 'horizontal',
-            side: horizontalSide.value,
-            size: Math.floor(freeVertical.value / 2),
-            shift: false,
-        }
-    }
-
+    // Automatic. Whenever the hud docks it gets the SUM of what letterboxing
+    // leaves, never one of the two strips: the frame is pushed flush against
+    // the opposite edge and the two are handed over as a single bar.
+    //
+    // The threshold below decides whether there is room to dock AT ALL. It used
+    // to decide a second thing as well -- a strip that cleared it on its own was
+    // taken alone and the frame left centred, which is only defensible if the
+    // far strip is worth keeping. It is not: it is black, it is empty, and it is
+    // exactly as wide as the one the hud was squeezed into. Measured in the
+    // user's own window, 1568x774 with a 4:3 camera: 268px of column on the
+    // left, 268px of black thrown away on the right.
+    //
+    // The gate itself is unchanged by this -- `free/2 >= T` implies `free >= T`,
+    // so the same window shapes dock as before. Only the size of the bar and
+    // where the frame sits are different, and nothing is ever cropped.
     if (freeHorizontal.value >= WEBCAM_HUD_MIN_DOCK_WIDTH) {
         return { axis: 'vertical', side: verticalSide.value, size: Math.floor(freeHorizontal.value), shift: true }
     }
