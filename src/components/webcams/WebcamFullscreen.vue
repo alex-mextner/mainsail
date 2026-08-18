@@ -77,7 +77,11 @@
             @pointermove="onPointerMove"
             @pointerup="onPointerUp"
             @pointercancel="onPointerUp">
-            <webcam-hud :layout="hudLayout" :chart-height="hudChartHeight" :show-chart="showChart" />
+            <webcam-hud
+                :layout="hudLayout"
+                :chart-height="hudChartHeight"
+                :show-chart="showChart"
+                :show-model="showModel" />
         </div>
     </div>
 </template>
@@ -95,6 +99,8 @@ import {
     webcamHudMinDockHeight,
     webcamHudMinDockWidth,
     webcamHudMinRowChartWidth,
+    webcamHudMinRowModelWidth,
+    webcamHudModelMinSide,
 } from '@/store/variables'
 import {
     mdiClose,
@@ -322,6 +328,26 @@ export default class WebcamFullscreen extends Mixins(BaseMixin) {
         }
 
         return true
+    }
+
+    /*
+     * The 3D tile only exists in a docked bar. Floating, the hud is a 420px card lying ON the
+     * picture, and putting a model there would hide the thing the page is for.
+     *
+     * In a column the tile takes the leftover between the readings and the chart and decides
+     * for itself whether that leftover is worth drawing in (see webcamHudModelMinSide) - which
+     * is the only honest place for that call, since the leftover is not knowable from here.
+     * A row has no leftover to take, so the gate is the window width, up front.
+     */
+    get showModel() {
+        const axis = this.dockPlan.axis
+        if (axis === 'none') return false
+
+        if (axis === 'horizontal') {
+            return this.containerWidth >= webcamHudMinRowModelWidth && this.dockPlan.size >= webcamHudModelMinSide
+        }
+
+        return this.containerHeight >= 320
     }
 
     get hudChartHeight() {
@@ -652,6 +678,14 @@ export default class WebcamFullscreen extends Mixins(BaseMixin) {
     onPointerDown(event: PointerEvent) {
         // the chart keeps its own pointer handling (tooltip)
         if ((event.target as HTMLElement)?.closest?.('.webcam-hud-chart')) return
+        /*
+         * ... and so does the 3D tile, for a sharper reason. Babylon's ArcRotateCamera attaches
+         * its own listeners to the canvas and calls preventDefault, but it does NOT stop
+         * propagation - so without this line a mouse drag on the model would orbit the camera
+         * AND tear the whole overlay out of its bar at the same time. Rotating the part must
+         * not move the overlay.
+         */
+        if ((event.target as HTMLElement)?.closest?.('[data-overcam-model]')) return
         if (this.dragging) return
 
         const card = this.hud

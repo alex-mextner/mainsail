@@ -45,6 +45,14 @@
             </div>
         </div>
 
+        <!--
+            Between the readings and the chart, which in a docked bar is the vertical middle -
+            and, since the bar became the sum of both letterbox strips, the empty half of it.
+            Floating over the image the tile is left out on purpose: that card is 420px wide and
+            sits ON the picture, so a model there would cover the very thing being watched.
+        -->
+        <webcam-hud-model v-if="showModel" class="webcam-hud__model" />
+
         <webcam-hud-chart v-if="showChart" class="webcam-hud__chart" :height="chartHeight" />
     </div>
 </template>
@@ -54,6 +62,7 @@ import Component from 'vue-class-component'
 import { Mixins, Prop } from 'vue-property-decorator'
 import BaseMixin from '@/components/mixins/base'
 import WebcamHudChart from '@/components/webcams/WebcamHudChart.vue'
+import WebcamHudModel from '@/components/webcams/WebcamHudModel.vue'
 import { mdiFileOutline } from '@mdi/js'
 import { colorArray, colorHeaterBed } from '@/store/variables'
 
@@ -66,7 +75,7 @@ interface WebcamHudHeater {
 }
 
 @Component({
-    components: { WebcamHudChart },
+    components: { WebcamHudChart, WebcamHudModel },
 })
 export default class WebcamHud extends Mixins(BaseMixin) {
     mdiFileOutline = mdiFileOutline
@@ -76,6 +85,7 @@ export default class WebcamHud extends Mixins(BaseMixin) {
     @Prop({ type: String, default: 'floating' }) declare readonly layout: string
     @Prop({ type: Number, default: 110 }) declare readonly chartHeight: number
     @Prop({ type: Boolean, default: true }) declare readonly showChart: boolean
+    @Prop({ type: Boolean, default: false }) declare readonly showModel: boolean
 
     get filename() {
         return this.$store.state.printer.print_stats?.filename ?? ''
@@ -191,6 +201,24 @@ export default class WebcamHud extends Mixins(BaseMixin) {
 
 .webcam-hud--vertical .webcam-hud__chart {
     margin-top: auto;
+}
+
+/* the tile eats the gap that `margin-top: auto` used to leave between the readings and the
+   chart - it grows into whatever is left and never pushes either of them around */
+.webcam-hud--vertical .webcam-hud__model {
+    flex: 1 1 auto;
+    min-height: 0;
+}
+
+/* in a letterbox row there is no vertical middle to speak of: the tile becomes a square as
+   tall as the row, parked between the readings and the chart. It only appears at all above
+   webcamHudMinRowModelWidth, so it can never squeeze the numbers onto a second line. */
+.webcam-hud--horizontal .webcam-hud__model {
+    flex: 0 0 auto;
+    align-self: stretch;
+    aspect-ratio: 1;
+    margin: 0;
+    max-width: 40%;
 }
 
 /* top/bottom bar: one row - info, then the numbers, then the chart on the right */
