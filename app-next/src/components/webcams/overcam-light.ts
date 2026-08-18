@@ -143,6 +143,30 @@ export const SHUTDOWN_MARKER = 'SMOKE ALARM'
 
 const OFF_GCODE = 'SET_LED LED=rgb_strip RED=0 GREEN=0 BLUE=0 SYNC=0'
 
+/**
+ * The deferred switch-off, held on the printer - see [delayed_gcode
+ * _overcam_light_off] and _OVERCAM_LIGHT_OFF in printer-configs/rgb-status.cfg.
+ *
+ * 🔴 WHY A TIMER ON THE PRINTER AT ALL. The user's correction, 2026-08-18:
+ *
+ *   «но при закрытии свет должен еще 5 минут гореть а не гаснуть сразу»
+ *
+ * Closing the page is not a command to go dark; it starts the same five
+ * minutes that losing focus does. That cannot be done in the page - a
+ * setTimeout dies with the tab, and at minute five there is no tab left. So
+ * the countdown is held where it outlives the browser entirely, and this side
+ * only arms and cancels it.
+ *
+ * And this is exactly why arming is allowed from an unload handler when
+ * switching off never was: arming SCHEDULES a decision rather than making one,
+ * so it needs no fresh read. The ownership check happens on the printer, at
+ * fire time, against live state.
+ */
+const REMOTE_TIMER_ID = '_overcam_light_off'
+const remoteArmGcode = (seconds: number) => `UPDATE_DELAYED_GCODE ID=${REMOTE_TIMER_ID} DURATION=${seconds}`
+/** DURATION=0 cancels without firing - see electronics-fan.cfg's note. */
+const REMOTE_CANCEL_GCODE = `UPDATE_DELAYED_GCODE ID=${REMOTE_TIMER_ID} DURATION=0`
+
 /** SYNC=0 on every write, without exception. SYNC=1 (led.py's own default)
  *  routes the colour change through toolhead.register_lookahead_callback, which
  *  both queues it behind the entire print move buffer - minutes, on a real
@@ -248,6 +272,13 @@ export interface OvercamLightIo {
     writeOwnActivity(ts: number): void
     /** Drop this tab from the shared activity record. */
     clearOwnActivity(): void
+    /**
+     * Fire-and-forget send that still works while the page is being torn down,
+     * where an awaited websocket round trip would simply be dropped. Only ever
+     * used to ARM the printer-side timer - never to switch anything off, which
+     * would need a fresh read this context cannot do.
+     */
+    sendGcodeBeacon?: (script: string) => void
     log?(event: string, detail: Record<string, unknown>): void
 }
 
@@ -288,10 +319,12 @@ export class OvercamLight {
      *  only for a light WE darkened. If the user turned it off by hand, or a
      *  macro did, waking the tab must not fight them for it. */
     private darkenedByUs = false
+    /** True once we have asked the printer to darken this light later. */
+    private handedOff = false
     private inFlight: Promise<void> = Promise.resolve()
 
     phase: 'init' | 'owned' | 'released' | 'skipped' = 'init'
-    lastDecision: ClaimDecision | ReleaseDecision | 'none' = 'none'
+    lastDecision: ClaimDecision | ReleaseDecision | 'armed' | 'none' = 'none'
     active = true
 
     constructor(io: OvercamLightIo, options: OvercamLightOptions = {}) {
@@ -342,23 +375,85 @@ export class OvercamLight {
     }
 
     /**
-     * Leaving the page hands the light back - it was lit for this screen, and a
-     * closed screen has no timer left to darken it. Safe to do here and only
-     * here: an SPA unmount still has a live socket, so it gets the same fresh
-     * snapshot and the same CAS as any other release.
+     * Leaving the page HANDS THE LIGHT OVER - it does not switch it off.
      *
-     * NOT hooked to pagehide/beforeunload, and that asymmetry is deliberate: an
-     * unload handler cannot await a query, so it could only compare against
-     * possibly-stale state - the exact failure the fresh-read rule exists to
-     * prevent, with no fix available inside an unload. Closing the tab outright
-     * therefore leaves the strip lit until the next /overcam visit adopts it or
-     * a lifecycle macro overwrites it. Stated rather than hidden.
+     * 🔴 This used to release immediately, and that was wrong. The user's
+     * correction, 2026-08-18: «но при закрытии свет должен еще 5 минут гореть
+     * а не гаснуть сразу». Walking away from the camera screen starts the same
+     * five minutes as looking away from it; you are still standing at the
+     * printer either way, and going dark the instant the tab closes is the
+     * behaviour that was actually annoying.
+     *
+     * So this arms the printer-side timer and leaves. Nothing here switches
+     * anything off, which also means nothing here has to do the fresh read an
+     * unload handler could never do - see REMOTE_TIMER_ID above.
      */
     async stop(): Promise<void> {
         this.stopped = true
         this.clearTimer()
+        await this.handOff()
         this.io.clearOwnActivity()
-        await this.release()
+    }
+
+    /**
+     * Ask the printer to darken this light in `idleMs`, unless something else
+     * has claimed it by then.
+     *
+     * Skipped when another /overcam tab is still being watched: without that,
+     * closing one tab would start a countdown against the tab someone is
+     * actually looking at. The peer's heartbeat is local (shared localStorage),
+     * so this costs no round trip.
+     *
+     * Not gated on a snapshot on purpose - the printer re-checks the token when
+     * the timer fires, so arming on a stale belief is harmless. Worst case we
+     * arm a timer that then declines to do anything.
+     */
+    private async handOff(): Promise<void> {
+        if (this.phase !== 'owned') return
+
+        const peerTs = this.io.readPeerActivity()
+        if (peerTs !== null && this.io.now() - peerTs < this.idleTimeoutMs) {
+            this.note('skip:peer-active', { armed: false })
+            return
+        }
+
+        this.handedOff = true
+        this.note('armed', { seconds: Math.round(this.idleTimeoutMs / 1000) })
+        await this.io.sendGcode(remoteArmGcode(Math.round(this.idleTimeoutMs / 1000))).catch(() => {
+            /* the page is going away; a failed arm just means the light stays on */
+        })
+    }
+
+    /**
+     * The same hand-off, from a context that cannot await anything: the tab is
+     * closing or navigating away for real, so this goes out as a beacon.
+     *
+     * This is the path that makes «при закрытии свет должен еще 5 минут гореть»
+     * work at all - Vue's unmount hook does not run on a hard navigation or a
+     * closed tab, so stop() never gets a chance there.
+     *
+     * Deliberately NOT suppressed when stop() has already armed the timer: on a
+     * real navigation both run, and a websocket frame queued by an unloading
+     * page is the one of the two that can silently vanish. Re-arming the same
+     * timer with the same duration is idempotent, so paying for it twice is
+     * cheaper than working out which one survived.
+     */
+    handOffSync(): void {
+        if (this.phase !== 'owned') return
+
+        const peerTs = this.io.readPeerActivity()
+        if (peerTs !== null && this.io.now() - peerTs < this.idleTimeoutMs) return
+
+        this.handedOff = true
+        this.io.sendGcodeBeacon?.(remoteArmGcode(Math.round(this.idleTimeoutMs / 1000)))
+    }
+
+    /** Call off a pending printer-side switch-off - someone is watching again. */
+    private async cancelHandOff(): Promise<void> {
+        if (!this.handedOff) return
+
+        this.handedOff = false
+        await this.io.sendGcode(REMOTE_CANCEL_GCODE).catch(() => {})
     }
 
     private clearTimer() {
@@ -368,7 +463,7 @@ export class OvercamLight {
         }
     }
 
-    private note(decision: ClaimDecision | ReleaseDecision, detail: Record<string, unknown> = {}) {
+    private note(decision: ClaimDecision | ReleaseDecision | 'armed', detail: Record<string, unknown> = {}) {
         this.lastDecision = decision
         this.io.log?.(decision, detail)
     }
@@ -445,6 +540,10 @@ export class OvercamLight {
         this.io.writeOwnActivity(this.io.now())
 
         if (this.stopped) return
+
+        // Someone is watching again, so call off the printer-side countdown.
+        void this.cancelHandOff()
+
         // Rule 3. Re-light only what we darkened; a light someone else turned
         // off stays off. Retrying here too, for the same reason as start():
         // waking a tab that was frozen is exactly when the socket is still
@@ -452,12 +551,27 @@ export class OvercamLight {
         if (this.phase === 'released' && this.darkenedByUs) void this.claimWithRetry()
     }
 
-    /** The page went hidden / lost focus. Starts the five minutes. */
+    /**
+     * The page stopped being watched. Starts the five minutes - twice over, and
+     * the redundancy is the design rather than an oversight:
+     *
+     *   - the LOCAL timer handles the case where the page is still here when
+     *     the wait runs out (looked away, tab in the background). It can do the
+     *     full fresh-read check before switching anything off.
+     *   - the PRINTER-SIDE timer handles the case the local one cannot survive:
+     *     the tab being closed. It re-checks the token itself when it fires.
+     *
+     * Whichever runs first wins; the other finds the token gone and declines,
+     * because both refuse on anything but our own 0.973. So the light goes dark
+     * once, five minutes after the last person stopped watching it, whether or
+     * not the page is still open.
+     */
     onInactive(): void {
         if (this.stopped) return
 
         this.active = false
         this.clearTimer()
+        void this.handOff()
         this.timer = setTimeout(() => {
             this.timer = null
             void this.release()

@@ -3,6 +3,7 @@ import { computed, ref } from 'vue'
 import { storeToRefs } from 'pinia'
 import { Card, CardHeader, CardTitle, CardContent } from '@/components/ui/card'
 import SegmentedControl from '@/components/ui/SegmentedControl.vue'
+import TimelapseSettings from '@/components/settings/TimelapseSettings.vue'
 import { useTheme, type ThemeMode } from '@/composables/useTheme'
 import { useDensity, type DensityMode, DENSITY_BREAKPOINTS } from '@/composables/useDensity'
 import { useConnectionStore } from '@/stores/connection'
@@ -219,6 +220,9 @@ function toggleMacro(name: string): void {
                 </div>
             </CardContent>
         </Card>
+
+        <!-- Renders itself away when Moonraker has no timelapse component. -->
+        <TimelapseSettings />
 
         <Card>
             <CardHeader><CardTitle>Printer</CardTitle></CardHeader>

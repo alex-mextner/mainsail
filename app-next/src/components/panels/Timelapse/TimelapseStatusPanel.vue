@@ -4,6 +4,7 @@ import { mdiInformation, mdiFileOutline } from '@mdi/js'
 import Panel from '@/components/ui/Panel.vue'
 import MdiIcon from '@/components/ui/MdiIcon.vue'
 import { Button } from '@/components/ui/button'
+import Switch from '@/components/ui/Switch.vue'
 import TimelapseRenderSettingsDialog from './TimelapseRenderSettingsDialog.vue'
 import { useTimelapseStore } from '@/stores/timelapse'
 import { usePrinterStore } from '@/stores/printer'
@@ -121,33 +122,19 @@ const transform = computed(() => {
             <div class="divide-border border-border mt-dgap divide-y border-t">
                 <div class="py-drow flex items-center justify-between">
                     <span class="text-sm">Enabled</span>
-                    <button
-                        type="button"
-                        role="switch"
-                        :aria-checked="timelapse.settings.enabled"
-                        aria-label="Enable timelapse for this print"
-                        class="focus-visible:ring-ring relative h-6 w-11 rounded-full transition-colors focus-visible:ring-2 focus-visible:outline-none"
-                        :class="timelapse.settings.enabled ? 'bg-primary' : 'bg-muted'"
-                        @click="timelapse.saveSetting({ enabled: !timelapse.settings.enabled })">
-                        <span
-                            class="bg-background absolute top-1 size-4 rounded-full transition-all"
-                            :class="timelapse.settings.enabled ? 'left-6' : 'left-1'" />
-                    </button>
+                    <Switch
+                        :model-value="timelapse.settings.enabled"
+                        :disabled="timelapse.isBlocked('enabled')"
+                        label="Enable timelapse for this print"
+                        @update:model-value="timelapse.saveSetting({ enabled: $event })" />
                 </div>
                 <div v-if="timelapse.settings.enabled" class="py-drow flex items-center justify-between">
                     <span class="text-sm">Auto render</span>
-                    <button
-                        type="button"
-                        role="switch"
-                        :aria-checked="timelapse.settings.autorender"
-                        aria-label="Render automatically when the print finishes"
-                        class="focus-visible:ring-ring relative h-6 w-11 rounded-full transition-colors focus-visible:ring-2 focus-visible:outline-none"
-                        :class="timelapse.settings.autorender ? 'bg-primary' : 'bg-muted'"
-                        @click="timelapse.saveSetting({ autorender: !timelapse.settings.autorender })">
-                        <span
-                            class="bg-background absolute top-1 size-4 rounded-full transition-all"
-                            :class="timelapse.settings.autorender ? 'left-6' : 'left-1'" />
-                    </button>
+                    <Switch
+                        :model-value="timelapse.settings.autorender"
+                        :disabled="timelapse.isBlocked('autorender')"
+                        label="Render automatically when the print finishes"
+                        @update:model-value="timelapse.saveSetting({ autorender: $event })" />
                 </div>
             </div>
         </template>

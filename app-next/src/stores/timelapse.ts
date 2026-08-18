@@ -278,10 +278,25 @@ export const useTimelapseStore = defineStore('timelapse', () => {
         filesLoaded.value = false
     }
 
+    /**
+     * 🔴 WATCHES `available` AS WELL AS THE SOCKET, and that is not belt and
+     * braces -- watching the socket alone is a race this port already lost once.
+     *
+     * `moonrakerComponents` is filled by `server.info`, which runs INSIDE
+     * `initialise()` -- i.e. after `socketState` is already `connected`. A store
+     * that fires on the connect and then gates on the component list therefore
+     * reads an empty list, returns early, and never tries again: the feature is
+     * silently absent for the whole session. Whether it wins or loses depends on
+     * when the page's lazy chunk finishes loading, which is why the timelapse
+     * PAGE worked and the settings CARD did not, from identical code.
+     *
+     * Same class as the heightmap's `configLoaded`: treating "not known yet" as
+     * "not there".
+     */
     watch(
-        () => connection.isConnected,
-        (connected) => {
-            if (connected) void load()
+        [() => connection.isConnected, available],
+        ([connected, ready]) => {
+            if (connected && ready) void load()
         },
         { immediate: true }
     )

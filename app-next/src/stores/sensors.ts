@@ -70,10 +70,17 @@ export const useSensorsStore = defineStore('sensors', () => {
         if (payload) applyUpdate(payload)
     })
 
+    /**
+     * Both, not just the socket: `moonrakerComponents` is filled by
+     * `server.info` INSIDE `initialise()`, so it arrives after the socket is
+     * already connected. Firing on the connect alone reads an empty component
+     * list, returns early and never retries -- see the long note in
+     * `timelapse.ts`, where that race was caught.
+     */
     watch(
-        () => connection.isConnected,
-        (connected) => {
-            if (connected) void load()
+        [() => connection.isConnected, available],
+        ([connected, ready]) => {
+            if (connected && ready) void load()
         },
         { immediate: true }
     )

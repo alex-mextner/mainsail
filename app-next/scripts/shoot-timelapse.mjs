@@ -79,10 +79,18 @@ try {
     )
     console.log(
         'page text            :',
-        await page.evaluate(() => {
-            const main = document.querySelector('main') ?? document.body
-            return main.innerText.split('\n').filter(Boolean).slice(0, 30)
-        })
+        // TEXT_MATCH filters the dump to the lines that matter on a long page --
+        // the settings page is mostly macros, and the timelapse card is at the
+        // bottom of it.
+        await page.evaluate(
+            ([limit, match]) => {
+                const main = document.querySelector('main') ?? document.body
+                const lines = main.innerText.split('\n').filter(Boolean)
+                const filtered = match ? lines.filter((line) => new RegExp(match, 'i').test(line)) : lines
+                return filtered.slice(0, limit)
+            },
+            [Number(process.env.TEXT_LINES ?? 30), process.env.TEXT_MATCH ?? '']
+        )
     )
 
     const report = await rigReport(page)
