@@ -190,10 +190,26 @@ export default class WebcamHudModel extends Mixins(BaseMixin) {
     }
 
     mounted() {
-        this.measure()
         this.resizeObserver = new ResizeObserver(() => this.measure())
-        if (this.root) this.resizeObserver.observe(this.root)
+        this.attachObserver()
         this.maybeAutoLoad()
+    }
+
+    /*
+     * The root element is behind `v-if="filename"`, so on a page opened while the printer has
+     * nothing loaded there is no element to observe at mount time - and when a file finally
+     * appears, an observer attached once in mounted() would still be watching nothing. Then
+     * boxWidth stays 0, roomEnough stays false, and the tile silently never draws. So this is
+     * re-run whenever the file changes, after the element has had a chance to appear.
+     */
+    attachObserver() {
+        if (!this.resizeObserver) return
+
+        this.resizeObserver.disconnect()
+        if (!this.root) return
+
+        this.resizeObserver.observe(this.root)
+        this.measure()
     }
 
     beforeDestroy() {
@@ -222,7 +238,10 @@ export default class WebcamHudModel extends Mixins(BaseMixin) {
             this.viewer?.clearScene(true)
         }
 
-        this.maybeAutoLoad()
+        this.$nextTick(() => {
+            this.attachObserver()
+            this.maybeAutoLoad()
+        })
     }
 
     /*
