@@ -1,4 +1,4 @@
-import { ref, computed } from 'vue'
+import { ref, computed, watch } from 'vue'
 import { defineStore } from 'pinia'
 import { useConnectionStore } from './connection'
 
@@ -110,6 +110,10 @@ export const useHistoryStore = defineStore('history', () => {
     const pageLoading = ref(false)
     /** No further pages exist: a request came back shorter than asked for. */
     const pageComplete = ref(false)
+    /** The last attempt failed. Distinct from `pageComplete` -- see loadMore. */
+    const pageError = ref(false)
+    /** Some view has asked for the paged list, so it is worth (re)loading. */
+    const pageWanted = ref(false)
 
     const totals = ref<HistoryTotals | null>(null)
 
@@ -150,14 +154,62 @@ export const useHistoryStore = defineStore('history', () => {
                 pageJobs.value.push(job)
             }
         } catch {
-            // A machine without [history] in moonraker.conf has no jobs at all;
-            // an empty page is the honest answer, and marking it complete stops
-            // the page retrying the same failing call on every scroll.
-            pageComplete.value = true
+            /**
+             * 🔴 DOES NOT SET `pageComplete`, AND THAT IS A FIX, NOT AN
+             * OVERSIGHT.
+             *
+             * It used to. The reasoning was "a machine without [history] has no
+             * jobs, so stop retrying" -- which quietly conflated "the server
+             * says there is no history" with "there was no server to ask".
+             * `connection.call` rejects immediately with `not connected`, so a
+             * page opened before the socket finished connecting marked the
+             * history permanently complete and empty, and no reconnect ever
+             * undid it.
+             *
+             * Measured, not reasoned: with the first websocket pointed at a
+             * dead port, /history sat at "0 of 0" for the whole session even
+             * after the socket came back. Now the failure leaves the state
+             * retryable and `ensurePage()` below retries it on reconnect.
+             */
+            pageError.value = true
         } finally {
             pageLoading.value = false
         }
     }
+
+    /**
+     * "This view wants the paged list." Safe to call repeatedly.
+     *
+     * 🔴 WHY THE PAGE CANNOT JUST CALL `loadMore()` FROM `onMounted`
+     * It did, and that was the bug above: `onMounted` fires once, and if the
+     * socket is not up yet the call rejects and nothing ever tries again. The
+     * other two stores added in this rewrite (`webcams`, `server`) already key
+     * their loading off `connection.isConnected`; this brings history into
+     * line rather than leaving one store with a different shape.
+     *
+     * It is a function the view calls rather than an unconditional watcher in
+     * the store body, because this store is ALSO used by the g-code file table
+     * for its "printed N times" badge -- and that page has no use for the paged
+     * list or the lifetime totals. Loading them for it would be traffic and
+     * memory spent on an Orange Pi for something nobody is looking at.
+     */
+    function ensurePage(): void {
+        pageWanted.value = true
+        if (!connection.isConnected) return
+
+        void loadTotals()
+        if (!pageJobs.value.length) {
+            pageComplete.value = false
+            void loadMore()
+        }
+    }
+
+    watch(
+        () => connection.isConnected,
+        (connected) => {
+            if (connected && pageWanted.value) ensurePage()
+        }
+    )
 
     /** Page until the server stops giving more. Upstream's "load complete history". */
     async function loadAll(): Promise<void> {
@@ -284,7 +336,9 @@ export const useHistoryStore = defineStore('history', () => {
         pageJobs,
         pageLoading,
         pageComplete,
+        pageError,
         totals,
+        ensurePage,
         loadMore,
         loadAll,
         loadTotals,
