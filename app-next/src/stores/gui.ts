@@ -132,6 +132,26 @@ export interface GuiState {
              */
             currentCam: { dashboard: string; page: string }
         }
+        /** Which surfaces the heightmap draws, and how the Z axis is scaled. */
+        heightmap: {
+            probed: boolean
+            mesh: boolean
+            flat: boolean
+            wireframe: boolean
+            /** Stretch the colour ramp over the real deviation instead of ±0.1. */
+            scaleGradient: boolean
+            /** Half-height of the Z box, in mm. */
+            scaleZMax: number
+        }
+    }
+    /**
+     * Heightmap appearance, kept OUT of `view` because upstream keeps it out
+     * too: `view.*` is per-page state a user flips while working, this is a
+     * preference set once in Settings.
+     */
+    heightmap: {
+        activecolorscheme: string
+        defaultOrientation: 'rightFront' | 'leftFront' | 'front' | 'top'
     }
     console: {
         /** `table` puts newest first; `shell` reads bottom-up like a terminal. */
@@ -233,6 +253,21 @@ const defaults = (): GuiState => ({
         webcam: {
             currentCam: { dashboard: 'all', page: 'all' },
         },
+        heightmap: {
+            // Upstream's defaults verbatim. `flat` on by default is what makes
+            // the deviation legible: without the zero plane under it, a 0.2 mm
+            // hill and a 2 mm hill look identical once the Z axis rescales.
+            probed: true,
+            mesh: true,
+            flat: true,
+            wireframe: true,
+            scaleGradient: false,
+            scaleZMax: 0.5,
+        },
+    },
+    heightmap: {
+        activecolorscheme: 'portland',
+        defaultOrientation: 'rightFront',
     },
     console: {
         direction: 'table',
