@@ -8,7 +8,8 @@
         :data-dock-size="dockPlan.size"
         :data-dock-shift="dockPlan.shift ? '1' : '0'"
         :data-frame-aspect="frameAspect"
-        :data-hud-mode="mode">
+        :data-hud-mode="mode"
+        :data-hud-anchor="anchor">
         <div class="webcam-fullscreen__stream" :style="streamStyle">
             <webcam-wrapper :webcam="webcam" :show-fps="false" page="fullscreen" />
         </div>
