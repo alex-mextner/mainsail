@@ -225,6 +225,18 @@ export default class WebcamHudModel extends Mixins(BaseMixin) {
         this.maybeAutoLoad()
     }
 
+    /*
+     * The metadata for a file always lands AFTER the file name does - the front end only asks
+     * Moonraker for it once print_stats names something new. Without this watcher the one
+     * chance to auto-load falls in the gap: the name arrives, the size and the thumbnail are
+     * not there yet, and nothing looks again. On a page opened at the machine and left open,
+     * that gap is every single print.
+     */
+    @Watch('currentFile.filename')
+    onMetadataArrived() {
+        this.maybeAutoLoad()
+    }
+
     @Watch('roomEnough')
     onRoomChanged(room: boolean) {
         if (room) {
