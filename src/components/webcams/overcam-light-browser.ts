@@ -8,9 +8,18 @@
  */
 import {
     OvercamLight,
+    decideClaim,
+    decideRelease,
+    isAlarmActive,
+    isLit,
+    isOurs,
     resolveIdleTimeoutMs,
+    DEFAULT_IDLE_TIMEOUT_MS,
+    SENTINEL_CHANNEL,
+    type ClaimDecision,
     type LightSnapshot,
     type OvercamLightIo,
+    type ReleaseDecision,
 } from '@/components/webcams/overcam-light'
 
 /** One shared record for every tab of this origin: { tabId: lastActivityMs }. */
@@ -19,16 +28,16 @@ const ACTIVITY_KEY = 'overcam.light.activity'
 /**
  * Which signals mean "someone is watching".
  *
- * 🔴 visibilityState is the primary signal and window blur is deliberately
- * event-only. The difference matters for the machine this is actually for: a
- * tablet propped up by the printer. `document.hasFocus()` can read false on a
- * page a user is plainly looking at (kiosk shells, on-screen keyboards, and -
- * observed while building this - any CDP-driven window), and polling it at
- * startup would then declare the page idle and darken the light every five
- * minutes with the user standing right there, which is the primary use case
- * broken. So focus is only ever believed when an actual blur event fires after
- * an actual focus - a page that never receives focus events is treated as
- * active, not as abandoned.
+ * 🔴 visibilityState is the primary signal, and `document.hasFocus()` is never
+ * polled - not at startup, not anywhere. The difference matters for the machine
+ * this is actually for: a tablet propped up by the printer. hasFocus() can read
+ * false on a page a user is plainly looking at (kiosk shells, on-screen
+ * keyboards, and - observed while building this - any CDP-driven window), and
+ * polling it would declare that page idle and darken the light every five
+ * minutes with the user standing right there. That is the primary use case,
+ * broken. So the page starts active and only a real `blur` EVENT can make it
+ * otherwise: a page that never receives focus events is treated as watched,
+ * not as abandoned.
  */
 const ACTIVITY_EVENTS = ['pointerdown', 'pointermove', 'keydown', 'wheel', 'touchstart'] as const
 
@@ -52,11 +61,27 @@ export interface BrowserLightOptions {
     search?: string
 }
 
-/** Shape of the harness handle hung on window - see attachOvercamLight. */
+/**
+ * Shape of the harness handle hung on window - see attachOvercamLight.
+ *
+ * The decision functions are exported here, not just the running instance,
+ * because the case that most needs testing is the one that cannot be staged on
+ * the hardware: a fire alarm. Raising `smoke_alarm_active` needs SET_PIN. Being
+ * pure functions over a snapshot, they can be fed a fabricated alarm instead -
+ * which is how scripts/check-overcam-light.mjs covers it.
+ */
 export interface OvercamLightHandle {
     light: OvercamLight
     fireIdleNow: () => Promise<void>
     snapshot: () => Promise<LightSnapshot>
+    constants: { sentinel: number; defaultIdleMs: number }
+    decide: {
+        claim: (snap: LightSnapshot) => ClaimDecision
+        release: (snap: LightSnapshot, peerActive: boolean) => ReleaseDecision
+        alarm: (snap: LightSnapshot) => boolean
+        lit: (snap: LightSnapshot) => boolean | null
+        ours: (snap: LightSnapshot) => boolean | null
+    }
 }
 
 interface WindowWithLight extends Window {
@@ -190,37 +215,44 @@ export function attachOvercamLight(options: BrowserLightOptions): () => void {
 
     io.log = () => publish()
 
-    /** Only ever true once a real focus/blur pair has been seen - see the note
-     *  on ACTIVITY_EVENTS above. */
-    let blurred = false
-
-    const evaluate = () => {
-        const hidden = document.visibilityState === 'hidden'
-        if (hidden || blurred) light.onInactive()
+    /**
+     * Each signal decides on its own, and none of them keeps a flag about the
+     * others.
+     *
+     * 🔴 An earlier version ANDed a sticky `blurred` flag into the visibility
+     * handler, and it was wrong in a way that only showed up on the second
+     * port: switching tabs fires `blur`, but coming back does NOT reliably
+     * fire a paired `focus` before `visibilitychange`, so the stale flag
+     * survived and the page that had just been brought to the front was still
+     * treated as unfocused - the light stayed off. Caught by
+     * scripts/check-overcam-light.mjs, which drives real tab switches rather
+     * than calling the handlers; the Vue 2 build had been passing the same
+     * check by luck of event ordering.
+     *
+     * Becoming visible therefore counts as activity outright. Blur only means
+     * anything while the page is still visible, which is precisely the case
+     * (another window on top, on a desktop) where blur/focus are reliable.
+     */
+    const onVisibilityChange = () => {
+        if (document.visibilityState === 'hidden') light.onInactive()
         else light.onActive()
 
         publish()
     }
 
     const onActivity = () => {
-        blurred = false
         light.onActive()
         publish()
     }
 
     const onBlur = () => {
-        blurred = true
-        evaluate()
-    }
-
-    const onFocus = () => {
-        blurred = false
-        evaluate()
+        light.onInactive()
+        publish()
     }
 
     window.addEventListener('blur', onBlur)
-    window.addEventListener('focus', onFocus)
-    document.addEventListener('visibilitychange', evaluate)
+    window.addEventListener('focus', onActivity)
+    document.addEventListener('visibilitychange', onVisibilityChange)
     ACTIVITY_EVENTS.forEach((name) => window.addEventListener(name, onActivity, { passive: true }))
 
     // Exposed for scripts/check-overcam-light.mjs: collapsing the wait is what
@@ -230,6 +262,14 @@ export function attachOvercamLight(options: BrowserLightOptions): () => void {
         light,
         fireIdleNow: () => light.fireIdleNow().then(publish),
         snapshot: () => io.querySnapshot(),
+        constants: { sentinel: SENTINEL_CHANNEL, defaultIdleMs: DEFAULT_IDLE_TIMEOUT_MS },
+        decide: {
+            claim: decideClaim,
+            release: decideRelease,
+            alarm: isAlarmActive,
+            lit: isLit,
+            ours: isOurs,
+        },
     }
 
     publish()
@@ -237,8 +277,8 @@ export function attachOvercamLight(options: BrowserLightOptions): () => void {
 
     return () => {
         window.removeEventListener('blur', onBlur)
-        window.removeEventListener('focus', onFocus)
-        document.removeEventListener('visibilitychange', evaluate)
+        window.removeEventListener('focus', onActivity)
+        document.removeEventListener('visibilitychange', onVisibilityChange)
         ACTIVITY_EVENTS.forEach((name) => window.removeEventListener(name, onActivity))
         delete (window as WindowWithLight).__overcamLight
 

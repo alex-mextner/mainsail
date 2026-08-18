@@ -312,7 +312,33 @@ export class OvercamLight {
     async start(): Promise<void> {
         this.stopped = false
         this.io.writeOwnActivity(this.io.now())
-        await this.claim()
+        await this.claimWithRetry()
+    }
+
+    /**
+     * A claim that survives a socket that is not up yet.
+     *
+     * 🔴 The page mounts before Moonraker's websocket finishes connecting, so
+     * the very first query can reject with "not connected" - which this code
+     * correctly reads as "unknown state, refuse", and would then never try
+     * again. The visible symptom is the whole feature silently not happening on
+     * a cold load, intermittently, depending on whether the socket won the
+     * race. Caught by scripts/check-overcam-light.mjs against the Vue 3 port,
+     * where the connect is slower and it lost the race most times.
+     *
+     * Retries only while the answer is 'unknown'. Every DEFINITE answer -
+     * claimed, adopted, someone else's light, an alarm - stops it immediately,
+     * so this can never turn into a poll or a second SET_LED.
+     */
+    private async claimWithRetry(attempts = 8, delayMs = 400): Promise<void> {
+        for (let attempt = 0; attempt < attempts; attempt++) {
+            if (this.stopped) return
+
+            await this.claim()
+            if (this.lastDecision !== 'skip:unknown') return
+
+            await new Promise((resolve) => setTimeout(resolve, delayMs))
+        }
     }
 
     /**
@@ -420,8 +446,10 @@ export class OvercamLight {
 
         if (this.stopped) return
         // Rule 3. Re-light only what we darkened; a light someone else turned
-        // off stays off.
-        if (this.phase === 'released' && this.darkenedByUs) void this.claim()
+        // off stays off. Retrying here too, for the same reason as start():
+        // waking a tab that was frozen is exactly when the socket is still
+        // reconnecting, and a single "not connected" would drop the re-light.
+        if (this.phase === 'released' && this.darkenedByUs) void this.claimWithRetry()
     }
 
     /** The page went hidden / lost focus. Starts the five minutes. */
