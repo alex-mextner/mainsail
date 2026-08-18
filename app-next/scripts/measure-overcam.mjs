@@ -10,12 +10,15 @@
  *   2. when the free space, both bars added together, clears the dock
  *      threshold, the hud must be docked - not floating over the picture
  *   3. a docked hud must have a non-zero bar
- *   4. the layout must settle: sampled three times, the numbers must not flap
+ *   4. the hud's CONTENT must fit inside the hud's box - a bar is only as tall
+ *      as the geometry allows, and readings that wrap spill off the screen
+ *   5. the layout must settle: sampled three times, the numbers must not flap
  *      (docking insets the frame, so a measurement taken FROM the frame box
  *      would oscillate - this is the check that would catch that)
- *   5. no console errors
+ *   6. no console errors
  *
  *   node scripts/measure-overcam.mjs <url> [wxh,wxh,...]
+ *   PLACEMENT='{"mode":"dock","anchor":"left-center","side":"left"}' node ... <url>
  *
  * It reads `data-dock-*` attributes off the overlay root rather than the Vue
  * instance, so the same script and the same assertions run against the Vue 2
@@ -29,9 +32,21 @@ import { join } from 'node:path'
 const [url, sizeList = '1920x1080,1600x900,1366x768,1440x900,1280x1024,900x900,760x1200'] = process.argv.slice(2)
 const sizes = sizeList.split(',').map((s) => s.split('x').map(Number))
 
-// Kept in step with src/store/variables.ts
+// Kept in step with src/store/variables.ts (Vue 2) and src/lib/webcam.ts (Vue 3)
 const MIN_DOCK_WIDTH = 200
 const MIN_DOCK_HEIGHT = 90
+
+/*
+ * PLACEMENT seeds the stored placement before the first load, so the same seven
+ * window shapes can be walked in a mode other than the automatic one:
+ *
+ *   PLACEMENT='{"mode":"dock","anchor":"left-center","side":"left"}'
+ *
+ * Manual docking recomputes the reserved bar on every resize and re-insets the
+ * frame, which is the same feedback surface the stability check exists for --
+ * so it has to be swept, not spot-checked at one viewport.
+ */
+const PLACEMENT = process.env.PLACEMENT ?? ''
 
 const candidates = [
     join(homedir(), 'AppData/Local/Google/Chrome/Application/chrome.exe'),
@@ -80,7 +95,37 @@ const probe = () => {
     const hud = container.querySelector('[data-overcam-hud]')
     const hudRect = hud ? hud.getBoundingClientRect() : null
 
+    /*
+     * Does the hud's CONTENT fit inside the hud's box?
+     *
+     * A docked bar is exactly as tall (or wide) as the geometry allows, and the
+     * readings inside it wrap when they run out of room -- at which point they
+     * spill past the bottom of the bar and off the screen. `scrollHeight` does
+     * not catch it: the hud is a flex column at `height: 100%`, and an
+     * overflowing flex item does not lengthen it. So walk the leaves, which are
+     * the elements that actually carry text, and compare rectangles.
+     */
+    let contentOverflow = 0
+    if (hudRect && hud) {
+        for (const el of hud.querySelectorAll('*')) {
+            if (el.children.length) continue
+            if (!el.textContent?.trim()) continue
+
+            const r = el.getBoundingClientRect()
+            if (!r.width || !r.height) continue
+
+            contentOverflow = Math.max(
+                contentOverflow,
+                Math.round(r.bottom - hudRect.bottom),
+                Math.round(hudRect.top - r.top),
+                Math.round(r.right - hudRect.right),
+                Math.round(hudRect.left - r.left)
+            )
+        }
+    }
+
     return {
+        contentOverflow,
         dock: {
             axis: container.dataset.dockAxis,
             side: container.dataset.dockSide,
@@ -115,11 +160,20 @@ const fail = (size, message) => failures.push(`${size}: ${message}`)
 
 try {
     const page = await browser.newPage()
-    await page.evaluateOnNewDocument(() => {
+    await page.evaluateOnNewDocument((placement) => {
+        localStorage.setItem('mainsail-next.theme', 'dark')
+
+        if (placement) {
+            // both keys: the Vue 2 build and the Vue 3 port name it differently,
+            // and only one of them is ever read
+            localStorage.setItem('webcamHudPlacement', placement)
+            localStorage.setItem('mainsail-next.webcamHudPlacement', placement)
+            return
+        }
+
         localStorage.removeItem('webcamHudPlacement')
         localStorage.removeItem('mainsail-next.webcamHudPlacement')
-        localStorage.setItem('mainsail-next.theme', 'dark')
-    })
+    }, PLACEMENT)
 
     const errors = []
     page.on('console', (m) => m.type() === 'error' && errors.push(m.text()))
@@ -159,6 +213,9 @@ try {
 
         if (docked && result.overlapsImage) fail(label, 'docked hud overlaps the painted image')
         if (docked && !(result.dock.size > 0)) fail(label, 'docked with a zero-width bar')
+
+        // 2px of tolerance: sub-pixel rounding on a scaled layout, not a wrap
+        if (result.contentOverflow > 2) fail(label, `hud content spills ${result.contentOverflow}px out of its box`)
 
         if (!docked) {
             if (result.freeTotal.horizontal >= MIN_DOCK_WIDTH)
