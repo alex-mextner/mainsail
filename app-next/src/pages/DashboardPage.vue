@@ -12,6 +12,7 @@ import TemperaturePanel from '@/components/panels/TemperaturePanel.vue'
 import ToolheadControlPanel from '@/components/panels/ToolheadControlPanel.vue'
 import WebcamPanel from '@/components/panels/WebcamPanel.vue'
 import MiscellaneousPanel from '@/components/panels/MiscellaneousPanel.vue'
+import LedEffectsPanel from '@/components/panels/LedEffectsPanel.vue'
 
 /**
  * Mainsail's dashboard: panels distributed across 1-3 columns depending on the
@@ -27,6 +28,13 @@ import MiscellaneousPanel from '@/components/panels/MiscellaneousPanel.vue'
  * (store/gui/index.ts, `desktopLayout1` / `desktopLayout2` / `widescreen*`):
  * the control panels sit in the first column, temperature in the second, and
  * macros directly after the extruder in every one of them.
+ *
+ * Panels that appear in NO default layout -- led-effects, and later afc / mmu /
+ * spoolman -- are not homeless upstream either: `gui/getters.getPanels` appends
+ * everything from `allDashboardPanels` that the stored layout does not mention
+ * to the END of column 1, visible. That is where they go here, for the same
+ * reason: those panels only exist when the hardware does, so they cannot be in
+ * a default layout, and each one hides itself when its objects are absent.
  *
  * Mainsail lets the user reorder panels and persists that in the Moonraker
  * database. That is not wired up yet, so the order below is the default one;
@@ -45,6 +53,7 @@ type FixedPanel =
     | 'miniconsole'
     | 'webcam'
     | 'miscellaneous'
+    | 'ledeffects'
 
 /** A macro group renders one panel each, so the list cannot be a fixed union. */
 type PanelEntry = { kind: FixedPanel } | { kind: 'macrogroup'; id: string }
@@ -80,6 +89,7 @@ const columns = computed<{ span: string; panels: PanelEntry[] }[]>(() => {
                         { kind: 'extruder' },
                         ...macros,
                         { kind: 'miscellaneous' },
+                        { kind: 'ledeffects' },
                         { kind: 'temperature' },
                         { kind: 'miniconsole' },
                     ],
@@ -96,6 +106,7 @@ const columns = computed<{ span: string; panels: PanelEntry[] }[]>(() => {
                         { kind: 'extruder' },
                         ...macros,
                         { kind: 'miscellaneous' },
+                        { kind: 'ledeffects' },
                     ],
                 },
                 { span: 'col-span-6', panels: [{ kind: 'temperature' }, { kind: 'miniconsole' }] },
@@ -111,6 +122,7 @@ const columns = computed<{ span: string; panels: PanelEntry[] }[]>(() => {
                         { kind: 'extruder' },
                         ...macros,
                         { kind: 'miscellaneous' },
+                        { kind: 'ledeffects' },
                     ],
                 },
                 { span: 'col-span-7', panels: [{ kind: 'temperature' }, { kind: 'miniconsole' }] },
@@ -120,7 +132,13 @@ const columns = computed<{ span: string; panels: PanelEntry[] }[]>(() => {
                 { span: 'col-span-3', panels: [{ kind: 'status' }] },
                 {
                     span: 'col-span-5',
-                    panels: [{ kind: 'toolhead' }, { kind: 'extruder' }, ...macros, { kind: 'miscellaneous' }],
+                    panels: [
+                        { kind: 'toolhead' },
+                        { kind: 'extruder' },
+                        ...macros,
+                        { kind: 'miscellaneous' },
+                        { kind: 'ledeffects' },
+                    ],
                 },
                 // Upstream's widescreen third column starts with the webcam and
                 // ends with the console (widescreenLayout3). Temperature is in
@@ -156,6 +174,7 @@ const keyOf = (panel: PanelEntry) => (panel.kind === 'macrogroup' ? `macrogroup-
                     <MacrosPanel v-else-if="panel.kind === 'macros'" />
                     <MacrogroupPanel v-else-if="panel.kind === 'macrogroup'" :group-id="panel.id" />
                     <MiscellaneousPanel v-else-if="panel.kind === 'miscellaneous'" />
+                    <LedEffectsPanel v-else-if="panel.kind === 'ledeffects'" />
                     <TemperaturePanel v-else-if="panel.kind === 'temperature'" />
                     <MiniconsolePanel v-else-if="panel.kind === 'miniconsole'" />
                 </template>
