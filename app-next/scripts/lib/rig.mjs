@@ -40,7 +40,96 @@
  * list is the audit artifact: `window.__rig.gcode` is what the page tried to
  * send. An audit taken afterwards proves less than an interception that makes
  * it impossible.
+ *
+ * ─────────────────────────────────────────────────────────────────────────
+ * 🔴 G-CODE IS NOT THE ONLY WAY TO MOVE THIS MACHINE (added 2026-08-19)
+ * ─────────────────────────────────────────────────────────────────────────
+ * Until now this file intercepted exactly ONE method, `printer.gcode.script`,
+ * and that was enough -- every panel it had been used on (heightmap,
+ * Miscellaneous, LED effects) is made of buttons that send g-code.
+ *
+ * The job queue breaks that assumption, and it breaks it in the worst
+ * direction. `server.job_queue.start` sends no g-code at all: it flips
+ * Moonraker's queue from `paused` to `ready`, and Moonraker then starts the
+ * next queued file BY ITSELF, at a moment of its choosing -- when the current
+ * print ends. A "click every control" pass, which is exactly how every panel in
+ * this port gets verified, would have armed an unattended print that begins
+ * after the harness has exited and the browser is closed. Nothing in the run's
+ * own output would have shown it.
+ *
+ * The same hole covers `server.database.post_item` (the maintenance records
+ * write into a namespace the port-80 Mainsail reads), `server.files.delete_file`,
+ * `printer.emergency_stop`, and the machine/service restarts.
+ *
+ * So the firewall is now a LIST, not a special case. The rule for adding to it:
+ * if the call changes anything that outlives the browser tab, it belongs here.
+ * Read-only calls must NOT be listed -- blocking those would silently hollow out
+ * the panels this rig exists to photograph.
+ *
+ * 🔴 The list is not the firewall -- `scripts/check-rig-firewall.mjs` is what
+ * says the firewall works. It sends each method from inside the page and reads
+ * the frames that actually left over CDP, so a list that is declared but never
+ * consulted fails the check instead of reading correct. That script exists
+ * because the first draft of this file did exactly that: declared the list,
+ * defined `isBlocked`, and never called it. Run it after touching this file.
  */
+
+/**
+ * Calls that must never reach the printer from a screenshot run.
+ *
+ * A trailing `*` matches a prefix; everything else is an exact method name.
+ * Deliberately NOT here, because they only read: `server.job_queue.status`,
+ * `server.database.get_item`, `machine.update.status`, `server.files.list`,
+ * `printer.objects.*`, `server.temperature_store`.
+ */
+export const DEFAULT_BLOCKED_METHODS = [
+    // Motion and heat.
+    'printer.gcode.script',
+    'printer.emergency_stop',
+    'printer.print.*', // start, pause, resume, cancel
+    'printer.restart',
+    'printer.firmware_restart',
+
+    // The queue: no g-code, but it makes the printer start a job on its own.
+    'server.job_queue.post_job',
+    'server.job_queue.delete_job',
+    'server.job_queue.pause',
+    'server.job_queue.start',
+    'server.job_queue.jump',
+
+    // Shared state that outlives the tab. The `mainsail` and `maintenance`
+    // namespaces are read by the interface the user actually prints with.
+    'server.database.post_item',
+    'server.database.delete_item',
+    'server.webcams.post_item',
+    'server.webcams.delete_item',
+
+    // Destroys data.
+    'server.files.delete_file',
+    'server.files.delete_directory',
+    'server.files.move',
+    'server.files.copy',
+    'server.files.post_directory',
+    'server.history.delete_job',
+    'server.history.reset_totals',
+
+    // The host itself.
+    'machine.reboot',
+    'machine.shutdown',
+    'machine.services.*',
+    'machine.update.*', // `machine.update.status` is exempted explicitly below
+
+    // Third-party components that are faked in fixtures, so their writes would
+    // land on a printer that does not even have them.
+    'machine.timelapse.post_settings',
+    'machine.timelapse.render',
+    'machine.timelapse.delete',
+    'machine.timelapse.saveframes',
+    'server.spoolman.post_spool_id',
+]
+
+/** Read-only calls that would otherwise be caught by a `*` above. */
+export const BLOCK_EXEMPTIONS = ['machine.update.status']
 
 /**
  * @param {import('puppeteer-core').Page} page
@@ -51,25 +140,51 @@
  * @param {string}   options.density     'auto' | 's' | 'm' | 'l'
  * @param {object}   options.gui         Patch merged over the persisted gui state.
  * @param {boolean}  options.blockGcode  Default true. Never pass false unless
- *                                       you intend the printer to move.
+ *                                       you intend the printer to move. Despite
+ *                                       the name it now governs the whole
+ *                                       firewall, not just g-code.
+ * @param {string[]} options.block       Extra methods to block, appended to
+ *                                       DEFAULT_BLOCKED_METHODS.
  * @param {object}   options.rpc         Moonraker replies to fake, keyed by
- *                                       method. See the block below.
+ *                                       method. See the block below. A method
+ *                                       listed here AND blocked gets this as
+ *                                       its synthetic reply.
  * @param {string[]} options.components  Optional Moonraker components to add to
  *                                       the `server.info` reply.
  */
 export async function installRig(
     page,
-    { status = {}, theme = 'dark', density = 'auto', gui = null, blockGcode = true, rpc = {}, components = [] } = {}
+    {
+        status = {},
+        theme = 'dark',
+        density = 'auto',
+        gui = null,
+        blockGcode = true,
+        block = [],
+        rpc = {},
+        components = [],
+    } = {}
 ) {
+    const blocked = [...DEFAULT_BLOCKED_METHODS, ...block]
+
     await page.evaluateOnNewDocument(
-        (statusPatch, t, d, guiPatch, block, rpcPatch, extraComponents) => {
+        (statusPatch, t, d, guiPatch, firewallOn, rpcPatch, extraComponents, blockedMethods, exemptMethods) => {
             localStorage.setItem('mainsail-next.theme', t)
             localStorage.setItem('mainsail-next.density', d)
             if (guiPatch) localStorage.setItem('mainsail-next.gui', JSON.stringify(guiPatch))
 
-            window.__rig = { injected: false, gcode: [], blocked: block, rpc: [] }
+            window.__rig = { injected: false, gcode: [], blocked: firewallOn, rpc: [], blockedCalls: [] }
 
             const isObject = (value) => typeof value === 'object' && value !== null && !Array.isArray(value)
+
+            /** `a.b.*` matches a prefix; anything else is an exact method name. */
+            const matches = (pattern, method) =>
+                pattern.endsWith('.*') ? method.startsWith(pattern.slice(0, -1)) : pattern === method
+
+            const isBlocked = (method) =>
+                typeof method === 'string' &&
+                !exemptMethods.some((pattern) => matches(pattern, method)) &&
+                blockedMethods.some((pattern) => matches(pattern, method))
 
             /**
              * Merge, not replace. `configfile.settings` must keep the machine's
@@ -101,6 +216,31 @@ export async function installRig(
                     Promise.resolve().then(() => appHandler?.({ data: JSON.stringify(frame) }))
                 }
 
+                /**
+                 * Which `rpc` fixture answers this frame, if any.
+                 *
+                 * A key is either a bare method or `method?k=v`. The qualified
+                 * form exists because ONE method serves several roots:
+                 * `server.files.list` lists the timelapse videos AND the log
+                 * files, and faking it by method alone would hand the Machine
+                 * page's log panel a list of timelapses.
+                 */
+                const rpcKeyFor = (frame) => {
+                    if (!frame?.method) return null
+                    for (const key of Object.keys(rpcPatch)) {
+                        const [method, query] = key.split('?')
+                        if (method !== frame.method) continue
+
+                        if (query) {
+                            const [name, value] = query.split('=')
+                            if (String(frame.params?.[name]) !== value) continue
+                        }
+
+                        return key
+                    }
+                    return null
+                }
+
                 const nativeSend = socket.send.bind(socket)
                 socket.send = (payload) => {
                     let frame = null
@@ -110,40 +250,46 @@ export async function installRig(
                         return nativeSend(payload)
                     }
 
-                    if (block && frame?.method === 'printer.gcode.script') {
-                        window.__rig.gcode.push(frame.params?.script ?? '')
-                        // Answer it, or the app's promise never settles and the
-                        // button spins forever -- which would look like a bug in
-                        // the panel rather than like the rig.
-                        deliver({ jsonrpc: '2.0', id: frame.id, result: 'ok' })
+                    const rpcKey = rpcKeyFor(frame)
+
+                    /**
+                     * THE FIREWALL. Everything on the blocklist is recorded,
+                     * dropped, and answered locally -- `nativeSend` is not
+                     * reached, so the frame never exists on the wire.
+                     */
+                    if (firewallOn && isBlocked(frame?.method)) {
+                        window.__rig.blockedCalls.push(frame.method)
+                        // Keep the g-code list as its own artifact: it is the
+                        // one every existing shoot script already prints, and
+                        // "which commands would have run" is a different
+                        // question from "which calls were stopped".
+                        if (frame.method === 'printer.gcode.script') {
+                            window.__rig.gcode.push(frame.params?.script ?? '')
+                        }
+
+                        /**
+                         * Answer it, or the app's promise never settles and the
+                         * button spins forever -- which would look like a bug in
+                         * the panel rather than like the rig.
+                         *
+                         * A fixture wins when one is supplied, which is the only
+                         * way a write-then-read flow can be photographed at all:
+                         * `server.database.post_item` is blocked, so the reply
+                         * the panel gets has to be manufactured here.
+                         */
+                        let result = frame.method === 'printer.gcode.script' ? 'ok' : {}
+                        if (rpcKey !== null) {
+                            result = JSON.parse(JSON.stringify(rpcPatch[rpcKey]))
+                            window.__rig.rpc.push(rpcKey)
+                        }
+                        deliver({ jsonrpc: '2.0', id: frame.id, result })
                         return undefined
                     }
 
                     // Record the id: a JSON-RPC reply carries only the id, never
                     // the method that produced it.
                     if (frame?.method === 'printer.objects.subscribe') subscribeIds.add(frame.id)
-                    /**
-                     * An `rpc` key is either a bare method or `method?k=v`.
-                     * The qualified form exists because ONE method serves
-                     * several roots: `server.files.list` lists the timelapse
-                     * videos AND the log files, and faking it by method alone
-                     * would hand the Machine page's log panel a list of
-                     * timelapses.
-                     */
-                    if (frame?.method) {
-                        for (const key of Object.keys(rpcPatch)) {
-                            const [method, query] = key.split('?')
-                            if (method !== frame.method) continue
-
-                            if (query) {
-                                const [name, value] = query.split('=')
-                                if (String(frame.params?.[name]) !== value) continue
-                            }
-
-                            rpcIds.set(frame.id, key)
-                            break
-                        }
-                    }
+                    if (rpcKey !== null) rpcIds.set(frame.id, rpcKey)
                     if (frame?.method === 'server.info' && extraComponents.length) serverInfoIds.add(frame.id)
 
                     return nativeSend(payload)
@@ -238,11 +384,22 @@ export async function installRig(
         gui,
         blockGcode,
         rpc,
-        components
+        components,
+        blocked,
+        BLOCK_EXEMPTIONS
     )
 }
 
-/** Read back what the page tried to send. Empty is the expected result. */
+/**
+ * Read back what the page tried to send. Empty is the expected result.
+ *
+ * `gcode` is what it tried to run; `blockedCalls` is every method the firewall
+ * stopped, g-code included. Print BOTH from a shoot script -- a run that
+ * reports "no g-code" while `blockedCalls` holds `server.job_queue.start` is
+ * not the quiet run it looks like.
+ */
 export async function rigReport(page) {
-    return page.evaluate(() => window.__rig ?? { injected: false, gcode: [], blocked: null, rpc: [] })
+    return page.evaluate(
+        () => window.__rig ?? { injected: false, gcode: [], blocked: null, rpc: [], blockedCalls: [] }
+    )
 }
