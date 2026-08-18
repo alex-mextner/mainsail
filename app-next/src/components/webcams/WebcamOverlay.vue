@@ -337,6 +337,25 @@ function onPointerDown(event: PointerEvent) {
 
     card.setPointerCapture?.(event.pointerId)
     event.preventDefault()
+
+    /**
+     * Re-measure once the drag style has actually been applied.
+     *
+     * The rect above is the card as it was BEFORE the drag: dragging one out of
+     * a vertical dock measures a full-height 280x900 column, but the moment
+     * `hudStyle` switches to pointer coordinates the card collapses to its
+     * content height (~460px). `nearestAnchor` centres the card on the pointer
+     * using that height, so with the stale 900 the midpoint sat 220px above
+     * where the card really was -- drag to the bottom right corner, release,
+     * and it snapped to the TOP right. Caught by driving a real drag against
+     * the printer (scripts/drag-overcam.mjs), not by reading the code.
+     */
+    void nextTick(() => {
+        if (!dragging.value || !hud.value) return
+
+        const rect = hud.value.getBoundingClientRect()
+        dragSize = { w: rect.width, h: rect.height }
+    })
 }
 
 function onPointerMove(event: PointerEvent) {

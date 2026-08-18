@@ -32,8 +32,15 @@
 # nginx is ALWAYS validated with `nginx -t` before reload, so a broken config
 # can never take the working Mainsail down.
 #
-# Deliberately absent: any /webcam proxy. This app shows no camera, and an idle
-# MJPEG proxy on a 512 MB Orange Pi is a memory risk for no benefit.
+# The /webcam/ proxy below was deliberately absent until 2026-08-18, on the
+# grounds that this app showed no camera and an idle MJPEG proxy on a 512 MB
+# Orange Pi was a memory risk for no benefit. That reasoning expired with
+# /overcam: the camera's stream_url is RELATIVE (`/webcam/?action=stream`), so
+# without the proxy the fullscreen view on :8090 has nothing to show. It is a
+# location block pointing at the mjpgstreamer1 upstream that already exists in
+# conf.d/upstreams.conf -- it costs nothing while nobody is looking at it, and
+# the alternative (an absolute URL baked into the client) would break the moment
+# the camera moves.
 set -euo pipefail
 
 HOST_USER="ultra@192.168.11.160"
@@ -65,8 +72,13 @@ verify() {
         printf 'new ui  index      : '; curl -s -o /dev/null -w '%{http_code}\n' http://127.0.0.1:$PORT/
         printf 'new ui  deep link  : '; curl -s -o /dev/null -w '%{http_code}\n' http://127.0.0.1:$PORT/deep/link
         printf 'new ui  moonraker  : '; curl -s -o /dev/null -w '%{http_code}\n' http://127.0.0.1:$PORT/printer/info
+        # ?action=snapshot, never ?action=stream: a stream is one response that
+        # never ends, and curl would hang here forever. --max-time is belt and
+        # braces in case the camera itself is wedged.
+        printf 'new ui  camera     : '; curl -s -o /dev/null --max-time 10 -w '%{http_code} (%{size_download} bytes)\n' 'http://127.0.0.1:$PORT/webcam/?action=snapshot'
         printf 'WORKING mainsail   : '; curl -s -o /dev/null -w '%{http_code}\n' http://127.0.0.1/
         printf 'WORKING moonraker  : '; curl -s -o /dev/null -w '%{http_code}\n' http://127.0.0.1/printer/info
+        printf 'WORKING camera     : '; curl -s -o /dev/null --max-time 10 -w '%{http_code} (%{size_download} bytes)\n' 'http://127.0.0.1/webcam/?action=snapshot'
     "
     echo "--- memory (Orange Pi has 512 MB) ---"
     ssh_u "free -m | head -2"
@@ -163,6 +175,25 @@ server {
         proxy_set_header X-Real-IP \$remote_addr;
         proxy_set_header X-Forwarded-For \$proxy_add_x_forwarded_for;
         proxy_set_header X-Scheme \$scheme;
+    }
+
+    # The camera, for /overcam. Copied verbatim from the working Mainsail's own
+    # site file so both interfaces reach mjpg-streamer the same way.
+    #
+    # The TRAILING SLASH on proxy_pass is load-bearing: it strips the /webcam/
+    # prefix, so /webcam/?action=stream reaches mjpg-streamer as /?action=stream.
+    # Without it every frame 404s.
+    #
+    # buffering off + postpone_output 0: an MJPEG stream is one HTTP response
+    # that never ends. Buffered, nginx would hold frames back waiting for a
+    # buffer to fill and the picture would arrive in jerks, seconds late.
+    location /webcam/ {
+        postpone_output 0;
+        proxy_buffering off;
+        proxy_ignore_headers X-Accel-Buffering;
+        access_log off;
+        error_log off;
+        proxy_pass http://mjpgstreamer1/;
     }
 }
 NGINXEOF
