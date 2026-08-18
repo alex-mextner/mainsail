@@ -145,6 +145,25 @@ export const webcamHudMinDockWidth = 200
 // constraint, and a temperature chart under ~56px cannot show gridlines. 20 + 56 = 76,
 // rounded up to 90 for breathing room.
 export const webcamHudMinDockHeight = 90
+// Minimum window width for the chart to be worth showing in a HORIZONTAL dock.
+//
+// A letterbox bar is only as tall as the window gives it, and content that needs a second
+// line does not fit: measured at 900x900, where the bar is 112px, "Remaining" and "ETA"
+// wrapped onto a second line and their values sat on the bottom edge of the screen. So the
+// six readings have to stay on ONE line, and the chart is what gives way.
+//
+// There are six of them (nozzle, bed, layer, speed, remaining, ETA), each with a 78px floor
+// and a 24px gap: 6x78 + 5x24 = 588, and the widest real content ("255 / 255 °C") keeps it
+// there. The row around them is 16px padding + a 260px file/progress block + a 24px gap ...
+// 24px gap + a 340px chart + 16px padding. 16 + 260 + 24 + 588 + 24 + 340 + 16 = 1268,
+// rounded down to 1240 to match the same constant in the Vue 3 port, where it was derived
+// first. Below this the chart is dropped and the readings get the whole bar: the numbers are
+// what you came for, the chart is the extra.
+//
+// This matters more since the hud can be docked BY HAND: a manual bottom dock reserves the
+// 90px minimum at any window width, so the narrow row is reachable now, not just at the few
+// window shapes where the letterbox happened to be that thin.
+export const webcamHudMinRowChartWidth = 1240
 // Distance the hud keeps from the edges when it floats over the image.
 export const webcamHudMargin = 16
 // How close to an edge the pointer has to be, while dragging the hud, for the drop to mean

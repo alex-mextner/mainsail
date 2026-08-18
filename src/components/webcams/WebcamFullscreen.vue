@@ -94,6 +94,7 @@ import {
     webcamHudMargin,
     webcamHudMinDockHeight,
     webcamHudMinDockWidth,
+    webcamHudMinRowChartWidth,
 } from '@/store/variables'
 import {
     mdiClose,
@@ -316,9 +317,18 @@ export default class WebcamFullscreen extends Mixins(BaseMixin) {
         }
     }
 
-    // a very short window cannot show the chart and the numbers at the same time
+    // A very short window cannot show the chart and the numbers at the same time, and neither
+    // can a letterbox row too narrow to hold both on one line - see webcamHudMinRowChartWidth.
+    // Dropping the chart is the right sacrifice either way: it is the extra, the readings are
+    // the point.
     get showChart() {
-        return this.containerHeight >= 320
+        if (this.containerHeight < 320) return false
+
+        if (this.dockPlan.axis === 'horizontal') {
+            return this.containerWidth >= webcamHudMinRowChartWidth
+        }
+
+        return true
     }
 
     get hudChartHeight() {
