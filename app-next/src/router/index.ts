@@ -126,12 +126,20 @@ const routes: RouteRecordRaw[] = [
     {
         name: 'machine',
         path: '/machine',
-        component: () => import('@/pages/PlaceholderPage.vue'),
+        component: () => import('@/pages/MachinePage.vue'),
         meta: {
             title: 'Machine',
             icon: mdiWrench,
             showInNavi: true,
-            ported: false,
+            /**
+             * True, with a caveat recorded in MachinePage.vue: every panel is
+             * ported, but the actions that CHANGE the machine (config saving,
+             * starting updates, host reboot/shutdown, service restarts, log
+             * rollover) are deliberately absent. `ported` tracks whether the
+             * route renders the real thing rather than a placeholder, and it
+             * does.
+             */
+            ported: true,
             position: 90,
         } satisfies AppRouteMeta,
     },
