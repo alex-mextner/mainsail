@@ -266,28 +266,21 @@ export default class WebcamFullscreen extends Mixins(BaseMixin) {
 
         if (!this.measurable || !this.frameAspect) return idle
 
-        // Automatic. A single untouched bar is tried first, so every window shape that already
-        // docked keeps its centred frame. Only when neither half reaches the threshold do we
-        // push the frame against the opposite edge and give the hud both bars as one - that is
-        // the case the thresholds used to reject even though the room was there twice over.
-        if (this.freeHorizontal / 2 >= webcamHudMinDockWidth) {
-            return {
-                axis: 'vertical',
-                side: this.verticalSide,
-                size: Math.floor(this.freeHorizontal / 2),
-                shift: false,
-            }
-        }
-
-        if (this.freeVertical / 2 >= webcamHudMinDockHeight) {
-            return {
-                axis: 'horizontal',
-                side: this.horizontalSide,
-                size: Math.floor(this.freeVertical / 2),
-                shift: false,
-            }
-        }
-
+        // Automatic. Whenever the hud docks it gets the SUM of what letterboxing leaves, never
+        // one of the two bars: the frame is pushed flush against the opposite edge and the two
+        // strips are handed over as a single one.
+        //
+        // The threshold below decides whether there is enough room to dock AT ALL. It used to
+        // decide something else as well - a bar that cleared it on its own was taken alone and
+        // the frame left centred, which is only defensible if the far strip is worth keeping.
+        // It is not: it is black, it is empty, and it is exactly as wide as the one the hud is
+        // squeezed into. Measured in the user's own window, 1568x774 with a 4:3 camera: 268px
+        // of column on the left, and 268px of black thrown away on the right.
+        //
+        // Note the gate itself is unchanged by this - `free/2 >= T` implies `free >= T`, so the
+        // same window shapes dock as before. Only the size of the bar, and where the frame
+        // sits, are different. Nothing is ever cropped: the frame is moved, and only scaled
+        // down when a manual dock reserved more than the letterboxing gave.
         if (this.freeHorizontal >= webcamHudMinDockWidth) {
             return { axis: 'vertical', side: this.verticalSide, size: Math.floor(this.freeHorizontal), shift: true }
         }
