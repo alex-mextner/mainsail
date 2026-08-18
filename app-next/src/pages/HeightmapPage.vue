@@ -40,8 +40,13 @@ const { isReady } = storeToRefs(connection)
  * profile." card -- a permanently empty panel reads as something that failed to
  * load. The chart panel then takes the full width and explains the situation in
  * one place.
+ *
+ * Note the `=== true`: before the object subscription lands, the answer is
+ * "don't know yet", and "No saved profile." is as much a false claim as the
+ * sentence in the chart panel. So the column waits for a real yes rather than
+ * for the absence of a no. See `configLoaded` in stores/printer.ts.
  */
-const hasBedMesh = computed(() => printer.hasConfigSection('bed_mesh'))
+const hasBedMesh = computed(() => printer.configLoaded && printer.hasConfigSection('bed_mesh'))
 </script>
 
 <template>

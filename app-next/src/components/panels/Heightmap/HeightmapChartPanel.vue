@@ -38,8 +38,22 @@ const calibrateOpen = ref(false)
 
 const view = computed(() => gui.state.view.heightmap)
 
-/** Whether this printer can mesh at all. */
-const hasBedMesh = computed(() => printer.hasConfigSection('bed_mesh'))
+/**
+ * Whether this printer can mesh at all -- THREE-valued, not two.
+ *
+ * `null` means "the config has not arrived yet", and it is not pedantry: the
+ * connection store marks Klippy ready from `printer.info` and only then awaits
+ * the object subscription, so there is a real window in which every
+ * `hasConfigSection` call answers "no" because nobody has asked. Measured on
+ * this machine at :8090: the sentence below was on screen at 150 ms and
+ * 200 ms, and the chart appeared at 250 ms. Saying "this printer has no
+ * [bed_mesh] section" during that window is a confident lie on every load of
+ * every machine that HAS one -- i.e. exactly the population this panel is for
+ * once H1 is done.
+ */
+const hasBedMesh = computed<boolean | null>(() =>
+    printer.configLoaded ? printer.hasConfigSection('bed_mesh') : null
+)
 
 const homed = computed(() => printer.homedAxes.includes('x') && printer.homedAxes.includes('y') && printer.homedAxes.includes('z'))
 
@@ -59,8 +73,24 @@ const zMaxRange = computed(() => {
     return [floor, Math.max(floor, 1)]
 })
 
+/**
+ * 🔴 ONE clamped value, used by the slider, the readout AND the chart.
+ *
+ * They must not be allowed to disagree. The stored default is 0.5; on a bed
+ * whose worst deviation is 0.7 mm the floor becomes 0.7, so an unclamped
+ * readout would say "±0.5" while the thumb sat at 0.7 and the Z box was drawn
+ * at ±0.5 -- with the surface poking out of the top of it. Nothing writes the
+ * clamp back, so it would persist until the user happened to drag the slider.
+ *
+ * A badly warped bed is precisely who opens this page, and a fixture with a
+ * flat one never reaches the state.
+ */
+const scaleZMax = computed(() =>
+    Math.min(Math.max(view.value.scaleZMax, zMaxRange.value[0]), zMaxRange.value[1])
+)
+
 const zMax = computed({
-    get: () => [Math.min(Math.max(view.value.scaleZMax, zMaxRange.value[0]), zMaxRange.value[1])],
+    get: () => [scaleZMax.value],
     set: (value: number[]) => set('scaleZMax', value[0]),
 })
 
@@ -135,7 +165,11 @@ function clearMesh(): void {
             with no buttons reads as a broken port rather than as a machine that
             cannot do this yet.
         -->
-        <p v-if="!hasBedMesh" class="text-muted-foreground py-3 text-sm leading-relaxed">
+        <!-- Config not in yet: nothing is claimed. A blank beat is honest; the
+             sentence below would not be. -->
+        <p v-if="hasBedMesh === null" class="text-muted-foreground py-3 text-sm italic">Reading the printer’s config…</p>
+
+        <p v-else-if="!hasBedMesh" class="text-muted-foreground py-3 text-sm leading-relaxed">
             This printer has no
             <code class="font-mono text-xs">[bed_mesh]</code>
             section, so there is nothing to probe, load or draw. Bed meshing needs a Z probe; add the section to the
@@ -148,7 +182,7 @@ function clearMesh(): void {
         </p>
 
         <template v-else>
-            <HeightmapChart />
+            <HeightmapChart :scale-z-max="scaleZMax" />
 
             <div class="gap-dgap flex flex-wrap items-center justify-between">
                 <label class="flex cursor-pointer items-center gap-2 text-sm">
@@ -199,7 +233,7 @@ function clearMesh(): void {
                         aria-label="Z axis scale" />
                 </SliderRoot>
                 <span class="w-16 shrink-0 text-right font-mono text-sm tabular-nums">
-                    ±{{ view.scaleZMax.toFixed(1) }}
+                    ±{{ scaleZMax.toFixed(1) }}
                 </span>
             </div>
         </template>

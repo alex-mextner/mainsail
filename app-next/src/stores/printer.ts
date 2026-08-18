@@ -182,6 +182,25 @@ export const usePrinterStore = defineStore('printer', () => {
     const hasConfigSection = (name: string): boolean => name in config.value
 
     /**
+     * Whether `configfile.settings` has arrived at all.
+     *
+     * 🔴 Needed because `hasConfigSection` answers "no" for two different
+     * reasons -- the machine does not have that section, and nobody has asked
+     * yet -- and a panel that treats the second as the first states something
+     * false with total confidence.
+     *
+     * The window is real, not theoretical: `initialise()` sets `klippyState`
+     * to `ready` from `printer.info`, and only THEN awaits
+     * `printer.objects.list` + `printer.objects.subscribe`. Measured against
+     * the printer at :8090: the heightmap page asserted "this printer has no
+     * [bed_mesh] section" at 150 ms and 200 ms after load, and had the chart at
+     * 250 ms. On the tablet at the machine that gap is longer.
+     *
+     * So anything phrased as "this machine cannot X" has to wait for this.
+     */
+    const configLoaded = computed(() => Object.keys(config.value).length > 0)
+
+    /**
      * What this particular machine can do, derived from the live config and
      * command table rather than assumed. Same rules as Mainsail's
      * `store/printer/getters.ts`, including the Kalico `z_tilt_ng` variant and
@@ -343,6 +362,7 @@ export const usePrinterStore = defineStore('printer', () => {
         bedMeshProfile,
         hasCommand,
         hasConfigSection,
+        configLoaded,
         applyStatus,
         reset,
     }

@@ -38,6 +38,15 @@ import { colorSchemeList, HEIGHTMAP_ORIENTATIONS, type HeightmapOrientation } fr
  */
 use([CanvasRenderer, VisualMapComponent, TooltipComponent, LegendComponent, Grid3DComponent, SurfaceChart])
 
+/**
+ * The Z half-height comes in as a PROP rather than being read from the store
+ * here, because the panel clamps it to the mesh's own extremes and the slider,
+ * the readout and this box have to agree on one number. Reading the raw stored
+ * value here is how a 0.7 mm bed ends up drawn in a +/-0.5 box with the surface
+ * poking out of the top.
+ */
+const props = defineProps<{ scaleZMax: number }>()
+
 const printer = usePrinterStore()
 const gui = useGuiStore()
 const { resolved: theme } = useTheme()
@@ -289,8 +298,8 @@ const option = computed(() => ({
         type: 'value',
         name: 'Z',
         nameTextStyle: { color: ink.value.mid },
-        min: -view.value.scaleZMax,
-        max: view.value.scaleZMax,
+        min: -props.scaleZMax,
+        max: props.scaleZMax,
         axisPointer: { label: { formatter: (value: string | number) => Number(value).toFixed(2) } },
     },
     grid3D: {
