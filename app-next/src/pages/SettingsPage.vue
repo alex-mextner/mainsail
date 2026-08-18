@@ -8,6 +8,11 @@ import { useDensity, type DensityMode, DENSITY_BREAKPOINTS } from '@/composables
 import { useConnectionStore } from '@/stores/connection'
 import { usePrinterStore } from '@/stores/printer'
 import { useGuiStore } from '@/stores/gui'
+import {
+    colorSchemeList,
+    HEIGHTMAP_COLOR_SCHEME_OPTIONS,
+    HEIGHTMAP_ORIENTATION_OPTIONS,
+} from '@/lib/heightmapColors'
 
 /**
  * Where the appearance controls belong. They previously sat in a permanent bar
@@ -47,6 +52,31 @@ const gui = useGuiStore()
 const { macros } = storeToRefs(printer)
 
 const macroSearch = ref('')
+
+/**
+ * Heightmap appearance -- Mainsail's `Settings -> Heightmap` tab. Two settings,
+ * both of them about how the 3D surface is drawn rather than about the mesh.
+ *
+ * The colour ramp is previewed next to the picker instead of being named only.
+ * Upstream lists five names in a dropdown, and "Portland" versus "HSV" means
+ * nothing until you see them; the swatch is the setting.
+ */
+const colorSchemeOptions = HEIGHTMAP_COLOR_SCHEME_OPTIONS
+const orientationOptions = HEIGHTMAP_ORIENTATION_OPTIONS
+
+const heightmapScheme = computed({
+    get: () => gui.state.heightmap.activecolorscheme.toLowerCase(),
+    // Normalised on write, so the case-insensitive lookup in
+    // lib/heightmapColors.ts only has to cover values written by older builds.
+    set: (value: string) => gui.saveSetting('heightmap.activecolorscheme', value.toLowerCase()),
+})
+
+const heightmapOrientation = computed({
+    get: () => gui.state.heightmap.defaultOrientation,
+    set: (value: string) => gui.saveSetting('heightmap.defaultOrientation', value),
+})
+
+const schemeSwatch = computed(() => `linear-gradient(to right, ${colorSchemeList(heightmapScheme.value).join(', ')})`)
 
 const filteredMacros = computed(() => {
     const needle = macroSearch.value.trim().toLowerCase()
@@ -140,6 +170,53 @@ function toggleMacro(name: string): void {
                 <p v-if="!filteredMacros.length" class="text-muted-foreground py-2 text-center text-sm italic">
                     No macro matches “{{ macroSearch }}”.
                 </p>
+            </CardContent>
+        </Card>
+
+        <Card>
+            <CardHeader><CardTitle>Heightmap</CardTitle></CardHeader>
+            <CardContent class="flex flex-col gap-6">
+                <div class="flex flex-wrap items-center justify-between gap-3">
+                    <div class="min-w-0">
+                        <p class="text-sm font-medium">Colour scheme</p>
+                        <p class="text-muted-foreground text-xs">
+                            How deviation is coloured on the 3D surface. Portland is diverging around its middle stop,
+                            which is why it is the default: the neutral band is where the bed is flat.
+                        </p>
+                    </div>
+                    <div class="flex items-center gap-2">
+                        <span
+                            class="border-input h-6 w-24 shrink-0 rounded border"
+                            :style="{ background: schemeSwatch }"
+                            aria-hidden="true" />
+                        <select
+                            v-model="heightmapScheme"
+                            aria-label="Heightmap colour scheme"
+                            class="border-input bg-background focus-visible:ring-ring rounded-md border px-2 py-1.5 text-sm focus-visible:ring-2 focus-visible:outline-none">
+                            <option v-for="option in colorSchemeOptions" :key="option.value" :value="option.value">
+                                {{ option.label }}
+                            </option>
+                        </select>
+                    </div>
+                </div>
+
+                <div class="flex flex-wrap items-center justify-between gap-3">
+                    <div class="min-w-0">
+                        <p class="text-sm font-medium">Default orientation</p>
+                        <p class="text-muted-foreground text-xs">
+                            Which way the box faces when the page opens. It can still be dragged; this is only where it
+                            starts.
+                        </p>
+                    </div>
+                    <select
+                        v-model="heightmapOrientation"
+                        aria-label="Heightmap default orientation"
+                        class="border-input bg-background focus-visible:ring-ring rounded-md border px-2 py-1.5 text-sm focus-visible:ring-2 focus-visible:outline-none">
+                        <option v-for="option in orientationOptions" :key="option.value" :value="option.value">
+                            {{ option.label }}
+                        </option>
+                    </select>
+                </div>
             </CardContent>
         </Card>
 

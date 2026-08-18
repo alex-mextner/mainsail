@@ -90,12 +90,17 @@ const routes: RouteRecordRaw[] = [
     {
         name: 'heightmap',
         path: '/heightmap',
-        component: () => import('@/pages/PlaceholderPage.vue'),
+        component: () => import('@/pages/HeightmapPage.vue'),
         meta: {
             title: 'Heightmap',
             icon: mdiGrid,
             showInNavi: true,
-            ported: false,
+            /**
+             * True: the route renders the real panels. It renders an honest
+             * "this printer has no [bed_mesh] section" on THIS machine, which
+             * is a state of the machine, not of the port. See HeightmapPage.vue.
+             */
+            ported: true,
             position: 40,
         } satisfies AppRouteMeta,
     },
