@@ -147,6 +147,12 @@ export const webcamHudMinDockWidth = 200
 export const webcamHudMinDockHeight = 90
 // Distance the hud keeps from the edges when it floats over the image.
 export const webcamHudMargin = 16
+// How close to an edge the pointer has to be, while dragging the hud, for the drop to mean
+// "put it into the bar on that edge" instead of "float it at the nearest of the eight
+// anchors". 64px is comfortably below where any anchor lands: a floating card is 420px wide
+// and is grabbed somewhere in its body, so parking it at the left anchor puts the pointer
+// around x=226 - four times outside this band. So the two gestures cannot be confused.
+export const webcamHudDockZoneDepth = 64
 
 export const navigationWidth = 220
 export const navigationItemHeight = 48

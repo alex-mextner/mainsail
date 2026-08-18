@@ -1,12 +1,30 @@
 <template>
-    <div ref="container" class="webcam-fullscreen">
-        <div class="webcam-fullscreen__stream">
+    <div
+        ref="container"
+        class="webcam-fullscreen"
+        data-overcam-root
+        :data-dock-axis="dockPlan.axis"
+        :data-dock-side="dockPlan.side"
+        :data-dock-size="dockPlan.size"
+        :data-dock-shift="dockPlan.shift ? '1' : '0'"
+        :data-frame-aspect="frameAspect"
+        :data-hud-mode="mode">
+        <div class="webcam-fullscreen__stream" :style="streamStyle">
             <webcam-wrapper :webcam="webcam" :show-fps="false" page="fullscreen" />
         </div>
 
-        <div class="webcam-fullscreen__actions">
-            <v-btn v-if="pinned" icon dark :title="$t('Panels.WebcamPanel.Hud.ResetPosition')" @click="resetPlacement">
+        <div ref="actions" class="webcam-fullscreen__actions">
+            <v-btn
+                v-if="mode !== 'auto'"
+                icon
+                dark
+                data-overcam-reset
+                :title="$t('Panels.WebcamPanel.Hud.ResetPosition')"
+                @click="resetPlacement">
                 <v-icon>{{ mdiPinOffOutline }}</v-icon>
+            </v-btn>
+            <v-btn v-if="showHud" icon dark data-overcam-dock-toggle :title="dockButtonTitle" @click="toggleDock">
+                <v-icon>{{ dockButtonIcon }}</v-icon>
             </v-btn>
             <v-btn icon dark :title="hudButtonTitle" @click="showHud = !showHud">
                 <v-icon>{{ showHud ? mdiEyeOffOutline : mdiEyeOutline }}</v-icon>
@@ -24,13 +42,26 @@
             </v-btn>
         </div>
 
-        <!-- the eight positions the hud snaps to, only while it is being dragged -->
+        <!-- drop targets, only while the hud is being dragged: the four bars it can be docked
+             into, and the eight positions it can float at -->
         <template v-if="dragging">
+            <div
+                v-for="sideName in sides"
+                :key="`bar-${sideName}`"
+                class="webcam-fullscreen__bar"
+                data-overcam-bar
+                :data-active="sideName === dragSide ? '1' : '0'"
+                :class="{ 'webcam-fullscreen__bar--active': sideName === dragSide }"
+                :style="barPreviewStyle(sideName)">
+                <span class="webcam-fullscreen__bar-label">{{ $t('Panels.WebcamPanel.Hud.DockHere') }}</span>
+            </div>
             <div
                 v-for="anchorName in anchors"
                 :key="anchorName"
                 class="webcam-fullscreen__snap"
-                :class="{ 'webcam-fullscreen__snap--active': anchorName === dragAnchor }"
+                data-overcam-snap
+                :data-active="!dragSide && anchorName === dragAnchor ? '1' : '0'"
+                :class="{ 'webcam-fullscreen__snap--active': !dragSide && anchorName === dragAnchor }"
                 :style="anchorStyle(anchorName)" />
         </template>
 
@@ -38,6 +69,7 @@
             v-if="showHud"
             ref="hud"
             class="webcam-fullscreen__hud"
+            data-overcam-hud
             :class="hudClasses"
             :style="hudStyle"
             @pointerdown="onPointerDown"
@@ -56,8 +88,25 @@ import BaseMixin from '@/components/mixins/base'
 import WebcamWrapper from '@/components/webcams/WebcamWrapper.vue'
 import WebcamHud from '@/components/webcams/WebcamHud.vue'
 import { GuiWebcamStateWebcam } from '@/store/gui/webcams/types'
-import { webcamHudMargin, webcamHudMinDockHeight, webcamHudMinDockWidth } from '@/store/variables'
-import { mdiClose, mdiEyeOffOutline, mdiEyeOutline, mdiFullscreen, mdiFullscreenExit, mdiPinOffOutline } from '@mdi/js'
+import {
+    webcamHudDockZoneDepth,
+    webcamHudMargin,
+    webcamHudMinDockHeight,
+    webcamHudMinDockWidth,
+} from '@/store/variables'
+import {
+    mdiClose,
+    mdiDockBottom,
+    mdiDockLeft,
+    mdiDockRight,
+    mdiDockTop,
+    mdiDockWindow,
+    mdiEyeOffOutline,
+    mdiEyeOutline,
+    mdiFullscreen,
+    mdiFullscreenExit,
+    mdiPinOffOutline,
+} from '@mdi/js'
 
 type HudAnchor =
     | 'top-left'
@@ -69,9 +118,26 @@ type HudAnchor =
     | 'bottom-left'
     | 'left-center'
 
+type HudSide = 'left' | 'right' | 'top' | 'bottom'
+
+// 'auto'  - dock into a black bar when one is big enough, float otherwise (the default)
+// 'float' - always a card on top of the image, at `anchor` (what a drag to the middle gives)
+// 'dock'  - always in the bar on `side`, whatever the measurement says (the manual override)
+type HudMode = 'auto' | 'float' | 'dock'
+
 interface HudPlacement {
-    pinned: boolean
+    mode: HudMode
     anchor: HudAnchor
+    side: HudSide
+}
+
+interface DockPlan {
+    axis: 'none' | 'vertical' | 'horizontal'
+    side: HudSide
+    size: number
+    // true when the frame is pushed against the opposite edge so that the two bars
+    // letterboxing would otherwise leave are handed to the hud as one
+    shift: boolean
 }
 
 // The placement is stored per browser, not in the moonraker database: which corner is free
@@ -84,8 +150,9 @@ const hudPlacementKey = 'webcamHudPlacement'
 const actionBarHeight = 56
 
 // Streams that render into an iframe cannot be measured for letterboxing (cross origin), and
-// the black bars are inside the iframe rather than around it.
-const unmeasurableServices = ['iframe']
+// the black bars are inside the iframe rather than around it. A grid of several cameras has no
+// single frame to measure either - every tile letterboxes on its own.
+const unmeasurableServices = ['iframe', 'grid']
 
 @Component({
     components: { WebcamHud, WebcamWrapper },
@@ -102,6 +169,7 @@ export default class WebcamFullscreen extends Mixins(BaseMixin) {
 
     @Ref('container') readonly container!: HTMLDivElement
     @Ref('hud') readonly hud!: HTMLDivElement
+    @Ref('actions') readonly actions!: HTMLDivElement
 
     readonly anchors: HudAnchor[] = [
         'top-left',
@@ -114,22 +182,28 @@ export default class WebcamFullscreen extends Mixins(BaseMixin) {
         'left-center',
     ]
 
+    readonly sides: HudSide[] = ['left', 'right', 'top', 'bottom']
+
     showHud = true
     isBrowserFullscreen = false
 
     // user placement
-    pinned = false
+    mode: HudMode = 'auto'
     anchor: HudAnchor = 'bottom-left'
+    side: HudSide = 'left'
 
-    // measured geometry of the black bars around the image
-    dockMode: 'none' | 'vertical' | 'horizontal' = 'none'
-    dockSize = 0
+    // measured geometry. Only the container and the aspect ratio of the frame are measured:
+    // everything else is derived from those two. Measuring the image box instead would be
+    // circular, because docking changes that box - see measureGeometry().
+    frameAspect: number | null = null
     containerWidth = 0
     containerHeight = 0
+    actionBarWidth = 0
 
     // drag state
     dragging = false
     dragAnchor: HudAnchor | null = null
+    dragSide: HudSide | null = null
     dragPointerId: number | null = null
     dragPos: { x: number; y: number } | null = null
     dragOffset = { x: 0, y: 0 }
@@ -138,14 +212,99 @@ export default class WebcamFullscreen extends Mixins(BaseMixin) {
     resizeObserver: ResizeObserver | null = null
     measureTimers: number[] = []
 
+    get measurable() {
+        return !unmeasurableServices.includes(this.webcam.service ?? '')
+    }
+
+    // total slack left over by `object-fit: contain`, i.e. BOTH bars added together. One of
+    // the two is always zero: a frame either pillarboxes or letterboxes, never both.
+    get freeHorizontal() {
+        if (!this.frameAspect || !this.containerWidth || !this.containerHeight) return 0
+
+        return Math.max(0, this.containerWidth - this.containerHeight * this.frameAspect)
+    }
+
+    get freeVertical() {
+        if (!this.frameAspect || !this.containerWidth || !this.containerHeight) return 0
+
+        return Math.max(0, this.containerHeight - this.containerWidth / this.frameAspect)
+    }
+
+    // which edge a vertical / horizontal dock goes to. The stored side wins when it belongs to
+    // that axis, otherwise the floating anchor decides - so a hud that used to sit bottom-left
+    // docks into the left column and the bottom row, exactly as it did before.
+    get verticalSide(): HudSide {
+        if (this.side === 'left' || this.side === 'right') return this.side
+
+        return this.anchor.includes('right') ? 'right' : 'left'
+    }
+
+    get horizontalSide(): HudSide {
+        if (this.side === 'top' || this.side === 'bottom') return this.side
+
+        return this.anchor.startsWith('top') ? 'top' : 'bottom'
+    }
+
+    get dockPlan(): DockPlan {
+        const idle: DockPlan = { axis: 'none', side: this.side, size: 0, shift: false }
+        if (this.mode === 'float') return idle
+        if (!this.containerWidth || !this.containerHeight) return idle
+
+        // The manual dock always happens - that is the whole point of it. If the bar the
+        // frame leaves is thinner than the readable minimum (or the frame cannot be measured
+        // at all), the bar is reserved anyway and the frame is scaled down into what is left.
+        // An override that silently does nothing would be worse than no override.
+        if (this.mode === 'dock') {
+            const axis = this.side === 'left' || this.side === 'right' ? 'vertical' : 'horizontal'
+            const minimum = axis === 'vertical' ? webcamHudMinDockWidth : webcamHudMinDockHeight
+            const free = axis === 'vertical' ? this.freeHorizontal : this.freeVertical
+
+            return { axis, side: this.side, size: Math.round(Math.max(minimum, free)), shift: true }
+        }
+
+        if (!this.measurable || !this.frameAspect) return idle
+
+        // Automatic. A single untouched bar is tried first, so every window shape that already
+        // docked keeps its centred frame. Only when neither half reaches the threshold do we
+        // push the frame against the opposite edge and give the hud both bars as one - that is
+        // the case the thresholds used to reject even though the room was there twice over.
+        if (this.freeHorizontal / 2 >= webcamHudMinDockWidth) {
+            return {
+                axis: 'vertical',
+                side: this.verticalSide,
+                size: Math.floor(this.freeHorizontal / 2),
+                shift: false,
+            }
+        }
+
+        if (this.freeVertical / 2 >= webcamHudMinDockHeight) {
+            return {
+                axis: 'horizontal',
+                side: this.horizontalSide,
+                size: Math.floor(this.freeVertical / 2),
+                shift: false,
+            }
+        }
+
+        if (this.freeHorizontal >= webcamHudMinDockWidth) {
+            return { axis: 'vertical', side: this.verticalSide, size: Math.floor(this.freeHorizontal), shift: true }
+        }
+
+        if (this.freeVertical >= webcamHudMinDockHeight) {
+            return { axis: 'horizontal', side: this.horizontalSide, size: Math.floor(this.freeVertical), shift: true }
+        }
+
+        return idle
+    }
+
     get docked() {
-        return !this.pinned && this.dockMode !== 'none'
+        return this.dockPlan.axis !== 'none'
     }
 
     get hudLayout() {
         if (!this.docked) return 'floating'
 
-        return this.dockMode
+        return this.dockPlan.axis
     }
 
     get hudClasses() {
@@ -162,15 +321,27 @@ export default class WebcamFullscreen extends Mixins(BaseMixin) {
     }
 
     get hudChartHeight() {
-        if (this.docked && this.dockMode === 'horizontal') {
-            return Math.min(150, Math.max(56, this.dockSize - 24))
+        const plan = this.dockPlan
+
+        if (plan.axis === 'horizontal') {
+            return Math.min(150, Math.max(56, plan.size - 24))
         }
 
-        if (this.docked && this.dockMode === 'vertical') {
+        if (plan.axis === 'vertical') {
             return Math.min(240, Math.max(90, Math.round(this.containerHeight * 0.28)))
         }
 
         return 110
+    }
+
+    // the frame is inset by the width of the bar the hud sits in, so `object-fit: contain`
+    // paints it flush against the opposite edge. Nothing is cropped - the frame is only ever
+    // moved, and scaled down when the bar had to be made bigger than the letterboxing gave.
+    get streamStyle(): Record<string, string> {
+        const plan = this.dockPlan
+        if (!plan.shift || plan.axis === 'none' || !plan.size) return {}
+
+        return { [plan.side]: `${plan.size}px` }
     }
 
     get hudStyle(): Record<string, string> {
@@ -183,12 +354,32 @@ export default class WebcamFullscreen extends Mixins(BaseMixin) {
             }
         }
 
-        if (this.docked && this.dockMode === 'vertical') {
-            return { top: '0px', bottom: '0px', left: '0px', width: `${this.dockSize}px` }
+        const plan = this.dockPlan
+
+        if (plan.axis === 'vertical') {
+            const style: Record<string, string> = {
+                top: '0px',
+                bottom: '0px',
+                width: `${plan.size}px`,
+                [plan.side]: '0px',
+            }
+            // the action buttons sit in the top right corner, so a right hand column starts
+            // below them rather than under them
+            if (plan.side === 'right') style.paddingTop = `${actionBarHeight}px`
+
+            return style
         }
 
-        if (this.docked && this.dockMode === 'horizontal') {
-            return { left: '0px', right: '0px', bottom: '0px', height: `${this.dockSize}px` }
+        if (plan.axis === 'horizontal') {
+            const style: Record<string, string> = {
+                left: '0px',
+                right: '0px',
+                height: `${plan.size}px`,
+                [plan.side]: '0px',
+            }
+            if (plan.side === 'top') style.paddingRight = `${this.actionBarWidth}px`
+
+            return style
         }
 
         return this.anchorStyle(this.anchor)
@@ -196,6 +387,25 @@ export default class WebcamFullscreen extends Mixins(BaseMixin) {
 
     get hudButtonTitle() {
         return this.showHud ? this.$t('Panels.WebcamPanel.Hud.HideHud') : this.$t('Panels.WebcamPanel.Hud.ShowHud')
+    }
+
+    get dockButtonTitle() {
+        return this.docked ? this.$t('Panels.WebcamPanel.Hud.Undock') : this.$t('Panels.WebcamPanel.Hud.Dock')
+    }
+
+    get dockButtonIcon() {
+        if (this.docked) return mdiDockWindow
+
+        switch (this.dockSideFromAnchor()) {
+            case 'right':
+                return mdiDockRight
+            case 'top':
+                return mdiDockTop
+            case 'bottom':
+                return mdiDockBottom
+            default:
+                return mdiDockLeft
+        }
     }
 
     get browserFullscreenSupported() {
@@ -240,6 +450,19 @@ export default class WebcamFullscreen extends Mixins(BaseMixin) {
         }
     }
 
+    // the bar that dropping on this edge would produce, drawn to scale while dragging so the
+    // preview does not promise something else than the drop delivers
+    barPreviewStyle(side: HudSide): Record<string, string> {
+        const vertical = side === 'left' || side === 'right'
+        const minimum = vertical ? webcamHudMinDockWidth : webcamHudMinDockHeight
+        const free = vertical ? this.freeHorizontal : this.freeVertical
+        const size = Math.round(Math.max(minimum, free))
+
+        if (vertical) return { top: '0px', bottom: '0px', width: `${size}px`, [side]: '0px' }
+
+        return { left: '0px', right: '0px', height: `${size}px`, [side]: '0px' }
+    }
+
     // center point of every anchor slot for a card of the given size, in container coordinates
     anchorCenters(width: number, height: number): Record<HudAnchor, [number, number]> {
         const margin = webcamHudMargin
@@ -280,6 +503,51 @@ export default class WebcamFullscreen extends Mixins(BaseMixin) {
         return best
     }
 
+    // dragging the hud right up against an edge means "put it into the bar there". The pointer
+    // decides, not the card: the card is 420px wide, so its own position cannot tell the two
+    // gestures apart.
+    dockZoneAt(x: number, y: number): HudSide | null {
+        const distance: Record<HudSide, number> = {
+            left: x,
+            right: this.containerWidth - x,
+            top: y,
+            bottom: this.containerHeight - y,
+        }
+
+        let best: HudSide | null = null
+        let bestDistance = webcamHudDockZoneDepth
+
+        for (const side of this.sides) {
+            if (distance[side] < bestDistance) {
+                bestDistance = distance[side]
+                best = side
+            }
+        }
+
+        return best
+    }
+
+    dockSideFromAnchor(): HudSide {
+        if (this.anchor.includes('left')) return 'left'
+        if (this.anchor.includes('right')) return 'right'
+        if (this.anchor === 'top-center') return 'top'
+
+        return 'bottom'
+    }
+
+    anchorForSide(side: HudSide): HudAnchor {
+        switch (side) {
+            case 'right':
+                return 'right-center'
+            case 'top':
+                return 'top-center'
+            case 'bottom':
+                return 'bottom-center'
+            default:
+                return 'left-center'
+        }
+    }
+
     mounted() {
         this.loadPlacement()
 
@@ -307,25 +575,34 @@ export default class WebcamFullscreen extends Mixins(BaseMixin) {
         }
     }
 
+    /*
+     * Measures the two inputs the layout is built from: the container, and the aspect ratio of
+     * the frame inside it.
+     *
+     * It deliberately does NOT read the size of the image box. Docking now insets that box by
+     * the width of the bar, so a measurement taken from it would feed back into itself: inset
+     * applied -> box narrower -> no slack left -> dock dropped -> inset removed -> slack back.
+     * The container is `position: fixed; inset: 0`, so its size depends on the viewport only,
+     * and the ResizeObserver on it cannot be retriggered by our own layout.
+     */
     measureGeometry() {
         const container = this.container
         if (!container) return
 
         this.containerWidth = container.clientWidth
         this.containerHeight = container.clientHeight
+        this.actionBarWidth = this.actions?.offsetWidth ?? 0
 
-        if (unmeasurableServices.includes(this.webcam.service ?? '')) {
-            this.dockMode = 'none'
+        if (!this.measurable) {
+            this.frameAspect = null
             return
         }
 
         const media = container.querySelector('img.webcamImage, video.webcamImage, video') as
             HTMLImageElement | HTMLVideoElement | null
 
-        const boxWidth = media?.offsetWidth ?? 0
-        const boxHeight = media?.offsetHeight ?? 0
-        if (!media || !boxWidth || !boxHeight) {
-            this.dockMode = 'none'
+        if (!media) {
+            this.frameAspect = this.configuredAspectRatio
             return
         }
 
@@ -340,20 +617,16 @@ export default class WebcamFullscreen extends Mixins(BaseMixin) {
             naturalHeight = media.videoHeight
         }
 
-        // no frame yet: re-measure as soon as one arrives, the configured aspect ratio is only
-        // a stand-in until then (the streamers do not emit an event of their own)
+        // No frame yet - and with mjpegstreamer-adaptive that is not a startup-only state: the
+        // img is re-pointed at a new snapshot several times a second, and it was measured at 0
+        // seconds after a resize. So the configured aspect ratio is a real fallback, not just a
+        // placeholder until the first frame.
         if (!naturalWidth || !naturalHeight) {
             media.addEventListener('load', this.onMediaLoaded, { once: true })
             media.addEventListener('loadedmetadata', this.onMediaLoaded, { once: true })
 
-            const ratio = this.configuredAspectRatio
-            if (!ratio) {
-                this.dockMode = 'none'
-                return
-            }
-
-            naturalWidth = ratio
-            naturalHeight = 1
+            this.frameAspect = this.configuredAspectRatio
+            return
         }
 
         const rotation = this.webcam.rotation ?? 0
@@ -363,37 +636,7 @@ export default class WebcamFullscreen extends Mixins(BaseMixin) {
             naturalHeight = swap
         }
 
-        // object-fit: contain - the painted image is the largest box with the stream aspect
-        // ratio that fits into the element box
-        const scale = Math.min(boxWidth / naturalWidth, boxHeight / naturalHeight)
-        const paintedWidth = naturalWidth * scale
-        const paintedHeight = naturalHeight * scale
-
-        let offsetLeft = 0
-        let offsetTop = 0
-        let element: HTMLElement | null = media
-        while (element && element !== container) {
-            offsetLeft += element.offsetLeft
-            offsetTop += element.offsetTop
-            element = element.offsetParent as HTMLElement | null
-        }
-
-        const sideBar = offsetLeft + (boxWidth - paintedWidth) / 2
-        const bottomBar = this.containerHeight - (offsetTop + (boxHeight + paintedHeight) / 2)
-
-        if (sideBar >= webcamHudMinDockWidth) {
-            this.dockMode = 'vertical'
-            this.dockSize = Math.floor(sideBar)
-            return
-        }
-
-        if (bottomBar >= webcamHudMinDockHeight) {
-            this.dockMode = 'horizontal'
-            this.dockSize = Math.floor(bottomBar)
-            return
-        }
-
-        this.dockMode = 'none'
+        this.frameAspect = naturalWidth / naturalHeight
     }
 
     onMediaLoaded() {
@@ -415,6 +658,7 @@ export default class WebcamFullscreen extends Mixins(BaseMixin) {
         this.dragSize = { w: cardRect.width, h: cardRect.height }
         this.dragOffset = { x: event.clientX - cardRect.left, y: event.clientY - cardRect.top }
         this.dragPos = { x: cardRect.left - containerRect.left, y: cardRect.top - containerRect.top }
+        this.dragSide = this.dockZoneAt(event.clientX - containerRect.left, event.clientY - containerRect.top)
         this.dragAnchor = this.nearestAnchor(this.dragPos.x + this.dragSize.w / 2, this.dragPos.y + this.dragSize.h / 2)
         this.dragPointerId = event.pointerId
         this.dragging = true
@@ -427,10 +671,13 @@ export default class WebcamFullscreen extends Mixins(BaseMixin) {
         if (!this.dragging || event.pointerId !== this.dragPointerId) return
 
         const containerRect = this.container.getBoundingClientRect()
-        const x = event.clientX - containerRect.left - this.dragOffset.x
-        const y = event.clientY - containerRect.top - this.dragOffset.y
+        const pointerX = event.clientX - containerRect.left
+        const pointerY = event.clientY - containerRect.top
+        const x = pointerX - this.dragOffset.x
+        const y = pointerY - this.dragOffset.y
 
         this.dragPos = { x, y }
+        this.dragSide = this.dockZoneAt(pointerX, pointerY)
         this.dragAnchor = this.nearestAnchor(x + this.dragSize.w / 2, y + this.dragSize.h / 2)
     }
 
@@ -439,16 +686,36 @@ export default class WebcamFullscreen extends Mixins(BaseMixin) {
 
         this.hud?.releasePointerCapture?.(event.pointerId)
 
-        if (this.dragAnchor) {
+        if (this.dragSide) {
+            // dropped on an edge: into the bar there, whatever the automatic measurement thinks
+            this.side = this.dragSide
+            this.anchor = this.anchorForSide(this.dragSide)
+            this.mode = 'dock'
+            this.savePlacement()
+        } else if (this.dragAnchor) {
             this.anchor = this.dragAnchor
-            this.pinned = true
+            this.mode = 'float'
             this.savePlacement()
         }
 
         this.dragging = false
         this.dragAnchor = null
+        this.dragSide = null
         this.dragPos = null
         this.dragPointerId = null
+    }
+
+    // the always available way in and out of the bar, for when dragging is awkward (touch) or
+    // the automatic placement simply picked the other answer
+    toggleDock() {
+        if (this.docked) {
+            this.mode = 'float'
+        } else {
+            this.mode = 'dock'
+            this.side = this.dockSideFromAnchor()
+        }
+
+        this.savePlacement()
     }
 
     loadPlacement() {
@@ -456,11 +723,22 @@ export default class WebcamFullscreen extends Mixins(BaseMixin) {
             const raw = localStorage.getItem(hudPlacementKey)
             if (!raw) return
 
-            const placement = JSON.parse(raw) as HudPlacement
-            if (!this.anchors.includes(placement.anchor)) return
+            const placement = JSON.parse(raw) as Partial<HudPlacement> & { pinned?: boolean }
+            if (placement.anchor && this.anchors.includes(placement.anchor)) this.anchor = placement.anchor
+            if (placement.side && this.sides.includes(placement.side)) this.side = placement.side
 
-            this.pinned = placement.pinned === true
-            this.anchor = placement.anchor
+            if (placement.mode && ['auto', 'float', 'dock'].includes(placement.mode)) {
+                this.mode = placement.mode
+                return
+            }
+
+            // Entry from the previous version, which only knew `pinned`. A stored `pinned: true`
+            // is dropped on purpose rather than translated to 'float': back then ANY drag set it,
+            // and it then suppressed docking for good, at every window size. That is one of the
+            // two ways to end up with "the overlay will not go into the black area", and the user
+            // cannot tell it apart from the threshold bug or clear it without knowing about
+            // localStorage. The chosen corner is kept, only the veto is dropped.
+            this.mode = 'auto'
         } catch {
             // corrupt entry, keep the defaults
         }
@@ -468,15 +746,16 @@ export default class WebcamFullscreen extends Mixins(BaseMixin) {
 
     savePlacement() {
         try {
-            localStorage.setItem(hudPlacementKey, JSON.stringify({ pinned: this.pinned, anchor: this.anchor }))
+            const placement: HudPlacement = { mode: this.mode, anchor: this.anchor, side: this.side }
+            localStorage.setItem(hudPlacementKey, JSON.stringify(placement))
         } catch {
             // private mode / quota, the placement simply is not remembered
         }
     }
 
-    // back to the automatic placement in the black bar
+    // back to the automatic placement
     resetPlacement() {
-        this.pinned = false
+        this.mode = 'auto'
         try {
             localStorage.removeItem(hudPlacementKey)
         } catch {
@@ -517,15 +796,19 @@ export default class WebcamFullscreen extends Mixins(BaseMixin) {
     bottom: 0;
     left: 0;
     z-index: 100;
-    display: flex;
-    align-items: center;
-    justify-content: center;
     background: #000;
 }
 
+/*
+ * The frame box, not the frame. It fills the overlay, except that docking insets it by the
+ * width of the bar the hud takes - which is what collects the two letterbox bars into one.
+ */
 .webcam-fullscreen__stream {
-    width: 100%;
-    height: 100%;
+    position: absolute;
+    top: 0;
+    right: 0;
+    bottom: 0;
+    left: 0;
 }
 
 /*
@@ -574,6 +857,7 @@ export default class WebcamFullscreen extends Mixins(BaseMixin) {
 .webcam-fullscreen__hud {
     position: absolute;
     z-index: 2;
+    box-sizing: border-box;
     touch-action: none;
 }
 
@@ -606,5 +890,35 @@ export default class WebcamFullscreen extends Mixins(BaseMixin) {
 .webcam-fullscreen__snap--active {
     border-color: rgba(255, 255, 255, 0.95);
     background: rgba(255, 255, 255, 0.22);
+}
+
+.webcam-fullscreen__bar {
+    position: absolute;
+    z-index: 3;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    border: 2px dashed rgba(255, 255, 255, 0.3);
+    pointer-events: none;
+}
+
+.webcam-fullscreen__bar--active {
+    border-color: rgba(255, 255, 255, 0.95);
+    background: rgba(255, 255, 255, 0.18);
+}
+
+.webcam-fullscreen__bar-label {
+    padding: 2px 8px;
+    border-radius: 10px;
+    background: rgba(0, 0, 0, 0.5);
+    color: rgba(255, 255, 255, 0.85);
+    font-size: 0.7rem;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    opacity: 0;
+}
+
+.webcam-fullscreen__bar--active .webcam-fullscreen__bar-label {
+    opacity: 1;
 }
 </style>

@@ -1099,6 +1099,8 @@
             "Hud": {
                 "Bed": "Bed",
                 "Close": "Close",
+                "Dock": "Move overlay into the black bar",
+                "DockHere": "Dock here",
                 "ETA": "ETA",
                 "Expand": "Expand webcam",
                 "Fullscreen": "Fullscreen",
@@ -1107,10 +1109,11 @@
                 "NoFile": "No file loaded",
                 "Nozzle": "Nozzle",
                 "Remaining": "Remaining",
-                "ResetPosition": "Dock overlay back to the black bar",
+                "ResetPosition": "Place the overlay automatically again",
                 "ShowHud": "Show overlay",
                 "Speed": "Speed",
-                "Target": "target"
+                "Target": "target",
+                "Undock": "Move overlay back onto the image"
             },
             "NoWebcam": "No webcam available. Add a webcam under \"Interface Settings\" -> \"Webcams\".",
             "UnknownWebcamService": "Unknown Webcam Service"
