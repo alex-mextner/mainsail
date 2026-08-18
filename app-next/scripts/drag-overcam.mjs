@@ -238,11 +238,15 @@ try {
     }, MODEL_FILE)
 
     /*
-     * @sindarius/gcodeviewer talks to console.error about g-code features it does not draw
-     * ("Missing feature Brim" on anything sliced by Orca), and swiftshader reports every
-     * software-rasteriser stall. Neither says anything about this page, and both only appear
-     * once the 3D tile is switched on - so they are named and ignored rather than allowed to
-     * turn the one check that catches real page errors into noise.
+     * swiftshader reports every software-rasteriser stall, and none of it says anything about
+     * this page - so it is named and ignored rather than allowed to turn the one check that
+     * catches real page errors into noise.
+     *
+     * "Missing feature <role>" stayed on this list after the tile learned the OrcaSlicer roles
+     * @sindarius/gcodeviewer has no colour for (2026-08-18): the line is gone from the tile,
+     * but any OTHER page that mounts the same engine - Mainsail's own /viewer - still produces
+     * it, and this script walks a whole front end. scripts/check-model.mjs is the one that
+     * asserts the tile itself no longer emits it.
      */
     const thirdPartyNoise = /Missing feature|GL Driver Message|WebGPU|swiftshader/i
     const errors = []
@@ -401,22 +405,27 @@ try {
              * The scene did not come up, and there are three honest reasons for that, none of
              * which is a defect:
              *
-             *   - the file is a motion diagnostic with no extrusion at all, which
-             *     @sindarius/gcodeviewer genuinely throws on           -> state 'error'
+             *   - the file is a motion diagnostic with no extrusion at all, so there is
+             *     nothing to draw and the tile says so                  -> state 'empty'
              *   - the printer changed the file mid-load (a job ending, the next one starting,
              *     a klipper restart, all of which happen constantly while the machine is being
-             *     tuned) and the tile gave up on the old one           -> state 'idle'
-             *   - the printer has nothing loaded at all                -> no tile
+             *     tuned) and the tile gave up on the old one            -> state 'idle'
+             *   - the printer has nothing loaded at all                 -> no tile
              *
              * What is NOT acceptable is a tile that sits on 'loading' with nothing behind it,
              * because that is a button the user can never press again. That is what this
              * checks. Name a renderable file with MODEL_FILE= to reach the branch above -
              * though a printer that is actively starting and stopping prints can still take
              * the file away underneath it.
+             *
+             * 'error' is still allowed here, but it now means what it says: something went
+             * wrong. "No extrusion in the file" used to land on it and is its own state since
+             * 2026-08-18 - and scripts/check-model.mjs is the one that asserts WHICH of the
+             * two a given file gets, because this script cannot know what it was handed.
              */
             console.log('the scene did not come up - checking that the tile gave up cleanly instead')
             check(
-                loaded.model === null || ['idle', 'error'].includes(loaded.model.state),
+                loaded.model === null || ['idle', 'empty', 'error'].includes(loaded.model.state),
                 `the tile ended in a state the user can act on, not '${loaded.model?.state}'`
             )
         }

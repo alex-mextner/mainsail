@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, onMounted, ref, watch, nextTick } from 'vue'
-import { mdiAlertOutline, mdiCameraRetake, mdiClose, mdiRotate3dVariant } from '@mdi/js'
+import { mdiAlertOutline, mdiCameraRetake, mdiClose, mdiCubeOffOutline, mdiRotate3dVariant } from '@mdi/js'
 import MdiIcon from '@/components/ui/MdiIcon.vue'
 import { usePrinterStore } from '@/stores/printer'
 import { useCurrentFile } from '@/composables/useCurrentFile'
@@ -32,9 +32,74 @@ import { WEBCAM_HUD_MODEL_MIN_SIDE, WEBCAM_HUD_MODEL_RENDER_QUALITY } from '@/li
 
 const props = withDefaults(defineProps<{ minSide?: number }>(), { minSide: WEBCAM_HUD_MODEL_MIN_SIDE })
 
-type ModelState = 'idle' | 'loading' | 'live' | 'error'
+// 'empty' is not a failure: the file was read, and it genuinely has no shape in
+// it. Kept apart from 'error' because the two need different words - see ctaLabel.
+type ModelState = 'idle' | 'loading' | 'live' | 'empty' | 'error'
 
 const OPT_IN_KEY = 'mainsail-next.webcamHudModelOptIn'
+
+/*
+ * Does this file ever push filament?
+ *
+ * It has to be answered from the g-code itself, because Moonraker's metadata
+ * cannot answer it: `endurance_v300.gcode` on this machine is a real Orca print
+ * with every E word stripped out for a motion test, and it reports the SAME
+ * `filament_total: 4662.23` as the print it was made from - the header comments
+ * the estimate is read from survived the stripping. Measured 2026-08-18, both
+ * files, the same number to the second decimal.
+ *
+ * The scan stops at the first extruding move, so a real print costs almost
+ * nothing (3.8 MB `cube_accel4000.gcode`: 0.1 ms); only a file that has none is
+ * read to the end, and the largest one here, 3.0 MB of pure motion, takes 9.5 ms.
+ *
+ * Deliberately narrow: it says "no move in this file ever advances the extruder",
+ * which is exactly the sentence the tile then puts on the screen. Anything
+ * subtler - a file with moves the renderer still cannot turn into geometry - is
+ * left to the catch below and keeps saying "unavailable", because for that case
+ * "there is nothing to draw" would be a guess.
+ */
+const EXTRUDING_MOVE = /(?:^|\n)[ \t]*[gG](?:0|1|00|01)(?![0-9.])[^;\n]*?[ \t][eE](-?[0-9]*\.?[0-9]+)/g
+
+function hasExtrusion(gcode: string): boolean {
+    EXTRUDING_MOVE.lastIndex = 0
+
+    let match: RegExpExecArray | null
+    while ((match = EXTRUDING_MOVE.exec(gcode)) !== null) {
+        if (Number(match[1]) > 0) return true
+    }
+
+    return false
+}
+
+/*
+ * The g-code roles OrcaSlicer writes that @sindarius/gcodeviewer 3.7.17 has no
+ * entry for.
+ *
+ * The library keeps one colour table per slicer (`SlicerSpecific/*.js`) and looks
+ * the `;TYPE:` value up in it. A value that is not in the table makes
+ * `isPerimeter()` and `isSupport()` throw on `featureList[undefined].perimeter`;
+ * the library catches that and calls `reportMissingFeature()`, which writes
+ * **console.error**. Nothing else happens - the segment is drawn in fallback grey.
+ *
+ * That one red line is why this was reported as "the 3D model does not load": the
+ * console showed `Missing feature Brim` and nothing else obvious, on a file that
+ * also happened to have no extrusion. The two are unrelated.
+ *
+ * The names are not guessed - they are `ExtrusionEntity::role_to_string()` in
+ * OrcaSlicer's own source (`src/libslic3r/ExtrusionEntity.cpp`), the function that
+ * writes the `;TYPE:` comment. Of its twenty roles the library knows fourteen;
+ * these are the six it does not, each pointed at the entry the library already has
+ * for the closest role, so no colour is invented here and the perimeter/support
+ * flags come from a real entry.
+ */
+const ORCA_FEATURE_ALIASES: Record<string, string> = {
+    Brim: 'Skirt',
+    Ironing: 'Top surface',
+    'Gap infill': 'Internal solid infill',
+    'Support transition': 'Support interface',
+    Multiple: 'Custom',
+    Undefined: 'Custom',
+}
 
 const printer = usePrinterStore()
 const { meta, printStats, filename, thumbnailUrl } = useCurrentFile()
@@ -73,9 +138,22 @@ const sizeLabel = computed(() => {
 
 const ctaLabel = computed(() => {
     if (state.value === 'loading') return 'Loading 3D model'
+    if (state.value === 'empty') return 'Nothing to show in 3D: this file has no extrusion moves'
     if (state.value === 'error') return '3D model unavailable'
     return `Show in 3D${sizeLabel.value}`
 })
+
+const ctaIcon = computed(() => {
+    if (state.value === 'empty') return mdiCubeOffOutline
+    if (state.value === 'error') return mdiAlertOutline
+    return mdiRotate3dVariant
+})
+
+const ctaTitle = computed(() =>
+    state.value === 'empty'
+        ? 'The whole g-code was read and no move in it feeds filament, so there is no shape to draw. This is normal for motion and calibration files.'
+        : 'Download the g-code and show the part in 3D. Drag it with the mouse to turn it.'
+)
 
 function optedIn(): boolean {
     try {
@@ -163,6 +241,7 @@ async function ensureViewer() {
      */
     instance.renderQuality = WEBCAM_HUD_MODEL_RENDER_QUALITY
     instance.gcodeProcessor.setLiveTracking(false)
+    teachOrcaFeatures(instance.gcodeProcessor)
     /*
      * Not optional: the library only ever assigns scene.clipPlane from the render
      * observables of the meshes it marks "clip ignore" (the bed, the axes), so
@@ -181,6 +260,66 @@ async function ensureViewer() {
 
     viewer = instance
     watchCamera()
+}
+
+/*
+ * Teach the library the OrcaSlicer roles it does not know (ORCA_FEATURE_ALIASES).
+ *
+ * There is no public seam for this: the slicer object is built inside
+ * processFile(), from a factory the package does not export, and thrown away on
+ * the next file. So the FIELD it lands in is intercepted - `gcodeProcessor.slicer`
+ * is a plain data property, and an accessor put on the instance sees every
+ * assignment the library makes to it, in time to fill the table in before a single
+ * `;TYPE:` line is looked up. Nothing is patched on a prototype, so no other user
+ * of the package is affected.
+ *
+ * The entries are copied from ones the library already ships, so the
+ * perimeter/support flags stay meaningful and no colour is invented; the Color4 is
+ * cloned rather than shared, because the processor hands these objects out and a
+ * shared one would tint two roles at once if anything ever wrote to it.
+ *
+ * reportMissingFeature() is replaced as well - not silenced. A role nobody has an
+ * entry for is still worth knowing about, but it is a COLOUR falling back to grey,
+ * and the library reports it with console.error. That single red line is what made
+ * this look like a crashed viewer; it is now a console.debug that says what
+ * actually happened.
+ */
+function teachOrcaFeatures(processor: any) {
+    if (!processor) return
+
+    let slicer: any = null
+    try {
+        Object.defineProperty(processor, 'slicer', {
+            configurable: true,
+            enumerable: true,
+            get: () => slicer,
+            set: (value: any) => {
+                slicer = value
+                if (!value) return
+
+                const list = value.featureList
+                if (list) {
+                    for (const [role, alias] of Object.entries(ORCA_FEATURE_ALIASES)) {
+                        if (Object.prototype.hasOwnProperty.call(list, role)) continue
+
+                        const template = list[alias]
+                        if (!template) continue
+
+                        list[role] = { ...template, color: template.color?.clone?.() ?? template.color }
+                    }
+                }
+
+                value.reportMissingFeature = (feature: string) => {
+                    if (value.missingFeatures?.includes(feature)) return
+
+                    value.missingFeatures?.push(feature)
+                    window.console.debug(`[overcam] g-code feature drawn in the fallback grey: ${feature}`)
+                }
+            },
+        })
+    } catch {
+        /* the library changed shape: the tile still works, it is just noisier */
+    }
 }
 
 /*
@@ -222,11 +361,7 @@ function frameModel() {
     }
 
     const span = extents
-        ? Math.max(
-              extents.max.x - extents.min.x,
-              extents.max.y - extents.min.y,
-              extents.max.z - extents.min.z
-          )
+        ? Math.max(extents.max.x - extents.min.x, extents.max.y - extents.min.y, extents.max.z - extents.min.z)
         : 0
 
     if (!extents || !Number.isFinite(span) || span <= 0) {
@@ -281,14 +416,33 @@ async function load() {
     }
 
     try {
-        await ensureViewer()
-        if (stale()) return
-
         const url = `/server/files/gcodes/${wanted.split('/').map(encodeURIComponent).join('/')}`
         const response = await fetch(url, { credentials: 'omit' })
         if (!response.ok) throw new Error(`${response.status} ${response.statusText}`)
 
         const text = await response.text()
+        if (stale()) return
+
+        /*
+         * Read the file BEFORE the engine, and go no further when there is nothing
+         * in it to draw. Half the g-code on this machine is a motion diagnostic
+         * with the extruder never touched, and handing one of those to the library
+         * throws inside babylon's CreateLineSystem - which used to land here as a
+         * bare "3D model unavailable", i.e. as if something were broken. It is not:
+         * there is simply no shape in the file, and the tile now says so.
+         *
+         * Bailing out here also means the 320 kB engine is never fetched and 4 MB
+         * are never parsed for a file that has no geometry in it.
+         */
+        if (!hasExtrusion(text)) {
+            loadedFile.value = wanted
+            state.value = 'empty'
+            // the click was answered, so the next file still auto-loads
+            setOptedIn(true)
+            return
+        }
+
+        await ensureViewer()
         if (stale() || !viewer) return
 
         await viewer.processFile(text)
@@ -304,8 +458,9 @@ async function load() {
         frameModel()
     } catch (error) {
         // A file deleted while print_stats still names it, a printer that went
-        // away, a diagnostic g-code with no extrusion at all (which the renderer
-        // genuinely throws on): all of them end here, quietly, on the thumbnail.
+        // away, a browser without webgl: all of them end here, quietly, on the
+        // thumbnail. "The file has no geometry in it" is NOT one of them any more -
+        // that is caught above and gets its own words, because it is not a fault.
         if (gone) return
         state.value = 'error'
         window.console.warn(
@@ -447,7 +602,9 @@ onBeforeUnmount(() => {
                 `display: none` is 0x0.
             -->
             <div ref="stage" class="absolute inset-0">
-                <div v-if="state === 'live'" class="absolute top-0.5 left-0.5 z-2 flex gap-0.5 opacity-35 hover:opacity-100">
+                <div
+                    v-if="state === 'live'"
+                    class="absolute top-0.5 left-0.5 z-2 flex gap-0.5 opacity-35 hover:opacity-100">
                     <button
                         type="button"
                         class="flex size-[26px] items-center justify-center rounded bg-black/45"
@@ -468,18 +625,24 @@ onBeforeUnmount(() => {
             </div>
 
             <!--
-                Idle, loading and error all show the slicer thumbnail, which is
-                already in the g-code and costs 13 kB. The button on top of it is
-                the ONE explicit click that buys the 3D scene, and it says what
-                that click costs.
+                Idle, loading, empty and error all show the slicer thumbnail, which
+                is already in the g-code and costs 13 kB. The button on top of it is
+                the ONE explicit click that buys the 3D scene, and it says what that
+                click costs.
+
+                'empty' is disabled on purpose: the file has been read and there is
+                provably nothing in it to draw, so pressing again would only
+                download it a second time. It stops being a button and becomes a
+                caption - which is the point, since a thumbnail with no explanation
+                is exactly what got read as "it is broken".
             -->
             <button
                 v-if="state !== 'live'"
                 type="button"
                 class="absolute inset-0 z-1 flex size-full items-center justify-center bg-black/85"
                 data-overcam-model-load
-                :disabled="state === 'loading'"
-                title="Download the g-code and show the part in 3D. Drag it with the mouse to turn it."
+                :disabled="state === 'loading' || state === 'empty'"
+                :title="ctaTitle"
                 @click="load">
                 <!--
                     draggable="false" is not cosmetic. An <img> is a native drag
@@ -497,11 +660,23 @@ onBeforeUnmount(() => {
                     :alt="filename"
                     draggable="false"
                     class="max-h-full max-w-full [-webkit-user-drag:none] object-contain opacity-75 select-none" />
+                <!--
+                    "Show in 3D · 4.0 MB" is three words and stays on one line,
+                    ellipsised when the bar is narrow. The empty-file message is a
+                    SENTENCE, and a sentence cut off at "this file has no…" explains
+                    nothing - which is the one thing that state exists to do. So it
+                    wraps instead, and is given the room to.
+                -->
                 <span
-                    class="flex max-w-full items-center gap-1.5 rounded-xl bg-black/60 px-2.5 py-0.5 text-[0.7rem] tracking-[0.04em] whitespace-nowrap text-white"
-                    :class="thumbnailUrl ? 'absolute bottom-1 left-1/2 -translate-x-1/2' : ''">
-                    <MdiIcon :path="state === 'error' ? mdiAlertOutline : mdiRotate3dVariant" class="size-4" />
-                    <span class="overflow-hidden text-ellipsis">{{ ctaLabel }}</span>
+                    class="flex max-w-full items-center gap-1.5 rounded-xl bg-black/60 px-2.5 py-0.5 text-[0.7rem] tracking-[0.04em] text-white"
+                    :class="[
+                        thumbnailUrl ? 'absolute bottom-1 left-1/2 -translate-x-1/2' : '',
+                        state === 'empty'
+                            ? 'max-w-[calc(100%-1rem)] text-center leading-tight whitespace-normal'
+                            : 'whitespace-nowrap',
+                    ]">
+                    <MdiIcon :path="ctaIcon" class="size-4 shrink-0" />
+                    <span :class="state === 'empty' ? '' : 'overflow-hidden text-ellipsis'">{{ ctaLabel }}</span>
                 </span>
             </button>
         </template>
