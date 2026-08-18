@@ -69,7 +69,20 @@ const hasButtons = computed(() => !!slots.buttons)
             <div class="bg-primary h-full w-1/3 animate-[panel-loading_1.4s_ease-in-out_infinite]" />
         </div>
 
-        <header class="gap-dgap px-dpx pt-dpy pb-dgap flex items-center justify-between">
+        <!--
+            The header is its own container-query context, for the same reason
+            the body below is one: a button in the #buttons slot has to decide
+            whether it can afford a text label, and the only honest input for
+            that is how wide THIS PANEL is, not how wide the window is.
+
+            Found by measurement, not by reading: the webcam switcher's camera
+            name was written `@md:inline` and never appeared at any width,
+            because the nearest container was the body div -- a sibling, not an
+            ancestor -- so the query had nothing to resolve against and silently
+            stayed false. A container query with no container never matches; it
+            does not fall back to the viewport.
+        -->
+        <header class="gap-dgap px-dpx pt-dpy pb-dgap @container flex items-center justify-between">
             <h3 class="flex min-w-0 items-center gap-2 leading-none font-semibold tracking-tight">
                 <slot name="icon">
                     <MdiIcon v-if="icon" :path="icon" class="text-muted-foreground size-4 shrink-0" />

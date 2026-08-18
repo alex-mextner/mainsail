@@ -10,6 +10,7 @@ import MiniconsolePanel from '@/components/panels/MiniconsolePanel.vue'
 import PrintStatusPanel from '@/components/panels/PrintStatusPanel.vue'
 import TemperaturePanel from '@/components/panels/TemperaturePanel.vue'
 import ToolheadControlPanel from '@/components/panels/ToolheadControlPanel.vue'
+import WebcamPanel from '@/components/panels/WebcamPanel.vue'
 
 /**
  * Mainsail's dashboard: panels distributed across 1-3 columns depending on the
@@ -34,7 +35,7 @@ import ToolheadControlPanel from '@/components/panels/ToolheadControlPanel.vue'
 const { breakpoint } = useBreakpoint()
 const gui = useGuiStore()
 
-type FixedPanel = 'status' | 'temperature' | 'toolhead' | 'extruder' | 'macros' | 'miniconsole'
+type FixedPanel = 'status' | 'temperature' | 'toolhead' | 'extruder' | 'macros' | 'miniconsole' | 'webcam'
 
 /** A macro group renders one panel each, so the list cannot be a fixed union. */
 type PanelEntry = { kind: FixedPanel } | { kind: 'macrogroup'; id: string }
@@ -56,6 +57,11 @@ const columns = computed<{ span: string; panels: PanelEntry[] }[]>(() => {
 
     switch (breakpoint.value) {
         case 'mobile':
+            // No webcam here, and that is upstream's default too
+            // (`mobileLayout`, the one entry with `visible: false`). Worth
+            // stating because it is the only layout that differs: a phone is
+            // usually on mobile data, and a camera panel scrolled off screen
+            // still costs frames. It stays one tap away in the sidebar.
             return [
                 {
                     span: 'col-span-12',
@@ -73,7 +79,13 @@ const columns = computed<{ span: string; panels: PanelEntry[] }[]>(() => {
             return [
                 {
                     span: 'col-span-6',
-                    panels: [{ kind: 'status' }, { kind: 'toolhead' }, { kind: 'extruder' }, ...macros],
+                    panels: [
+                        { kind: 'status' },
+                        { kind: 'webcam' },
+                        { kind: 'toolhead' },
+                        { kind: 'extruder' },
+                        ...macros,
+                    ],
                 },
                 { span: 'col-span-6', panels: [{ kind: 'temperature' }, { kind: 'miniconsole' }] },
             ]
@@ -81,7 +93,13 @@ const columns = computed<{ span: string; panels: PanelEntry[] }[]>(() => {
             return [
                 {
                     span: 'col-span-5',
-                    panels: [{ kind: 'status' }, { kind: 'toolhead' }, { kind: 'extruder' }, ...macros],
+                    panels: [
+                        { kind: 'status' },
+                        { kind: 'webcam' },
+                        { kind: 'toolhead' },
+                        { kind: 'extruder' },
+                        ...macros,
+                    ],
                 },
                 { span: 'col-span-7', panels: [{ kind: 'temperature' }, { kind: 'miniconsole' }] },
             ]
@@ -89,10 +107,11 @@ const columns = computed<{ span: string; panels: PanelEntry[] }[]>(() => {
             return [
                 { span: 'col-span-3', panels: [{ kind: 'status' }] },
                 { span: 'col-span-5', panels: [{ kind: 'toolhead' }, { kind: 'extruder' }, ...macros] },
-                // Upstream's widescreen third column is webcam + miniconsole;
-                // the webcam panel is not ported yet, so the console has it to
-                // itself for now.
-                { span: 'col-span-4', panels: [{ kind: 'temperature' }, { kind: 'miniconsole' }] },
+                // Upstream's widescreen third column starts with the webcam and
+                // ends with the console (widescreenLayout3). Temperature is in
+                // it too only because upstream's second column also holds
+                // machine-settings, which is not ported yet.
+                { span: 'col-span-4', panels: [{ kind: 'webcam' }, { kind: 'temperature' }, { kind: 'miniconsole' }] },
             ]
     }
 })
@@ -116,6 +135,7 @@ const keyOf = (panel: PanelEntry) => (panel.kind === 'macrogroup' ? `macrogroup-
             <div v-for="(column, index) in columns" :key="index" :class="[column.span, 'gap-dgap flex flex-col']">
                 <template v-for="panel in column.panels" :key="keyOf(panel)">
                     <PrintStatusPanel v-if="panel.kind === 'status'" />
+                    <WebcamPanel v-else-if="panel.kind === 'webcam'" surface="dashboard" />
                     <ToolheadControlPanel v-else-if="panel.kind === 'toolhead'" />
                     <ExtruderControlPanel v-else-if="panel.kind === 'extruder'" />
                     <MacrosPanel v-else-if="panel.kind === 'macros'" />

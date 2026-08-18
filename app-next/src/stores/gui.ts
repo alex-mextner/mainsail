@@ -106,6 +106,18 @@ export interface GuiState {
             /** Metadata columns the user switched off, by field name. */
             hideMetadataColumns: string[]
         }
+        webcam: {
+            /**
+             * Which camera each surface shows, keyed by surface -- upstream's
+             * `view.webcam.currentCam`, same two keys and the same `'all'`
+             * sentinel for "show them all in a grid".
+             *
+             * Two keys rather than one because they are genuinely different
+             * choices: the dashboard panel is a glance at the one camera that
+             * matters, the /cam page is where you look at all of them.
+             */
+            currentCam: { dashboard: string; page: string }
+        }
     }
     console: {
         /** `table` puts newest first; `shell` reads bottom-up like a terminal. */
@@ -193,6 +205,9 @@ const defaults = (): GuiState => ({
             // narrow screen the table scrolls rather than dropping columns, so
             // hiding is the user's choice, not the layout's.
             hideMetadataColumns: [],
+        },
+        webcam: {
+            currentCam: { dashboard: 'all', page: 'all' },
         },
     },
     console: {

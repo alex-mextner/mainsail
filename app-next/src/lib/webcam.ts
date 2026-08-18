@@ -6,6 +6,17 @@
  * the streamer components and the overlay can share them without inheritance.
  */
 
+import {
+    mdiAlbum,
+    mdiCampfire,
+    mdiDoor,
+    mdiPrinter3d,
+    mdiPrinter3dNozzle,
+    mdiRadiatorDisabled,
+    mdiRaspberryPi,
+    mdiWebcam,
+} from '@mdi/js'
+
 /** One entry of Moonraker's `server.webcams.list`, as it comes off the wire. */
 export interface WebcamConfig {
     name: string
@@ -83,6 +94,32 @@ export function webcamWrapperStyle(aspectRatio: number | null, rotation: number)
     }
 
     return { aspectRatio: String(aspectRatio) }
+}
+
+/**
+ * Moonraker stores a camera's icon as the STRING NAME of an mdi export
+ * (`"mdiWebcam"`), because its database holds JSON and cannot hold an svg path.
+ * The name has to be mapped back to a path by hand -- upstream's
+ * `convertWebcamIcon`, same seven names, same `mdiWebcam` fallback.
+ *
+ * A lookup table rather than an index into the `@mdi/js` module: importing the
+ * whole icon set to resolve one string would pull ~7 MB of paths into the
+ * bundle, and this app is served off an Orange Pi.
+ */
+const WEBCAM_ICONS: Record<string, string> = {
+    mdiAlbum,
+    mdiCampfire,
+    mdiDoor,
+    mdiRadiatorDisabled,
+    mdiPrinter3d,
+    mdiPrinter3dNozzle,
+    mdiRaspberryPi,
+    mdiWebcam,
+}
+
+export function webcamIcon(name: string | undefined | null): string {
+    if (!name) return mdiWebcam
+    return WEBCAM_ICONS[name] ?? mdiWebcam
 }
 
 /** `"4:3"` -> 1.333. Null when the camera declares nothing usable. */

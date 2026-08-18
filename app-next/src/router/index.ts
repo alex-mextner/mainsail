@@ -47,12 +47,12 @@ const routes: RouteRecordRaw[] = [
     {
         name: 'webcam',
         path: '/cam',
-        component: () => import('@/pages/PlaceholderPage.vue'),
+        component: () => import('@/pages/WebcamPage.vue'),
         meta: {
             title: 'Webcam',
             icon: mdiWebcam,
             showInNavi: true,
-            ported: false,
+            ported: true,
             position: 20,
         } satisfies AppRouteMeta,
     },
