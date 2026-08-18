@@ -10,12 +10,17 @@
  *   2. when the free space, both bars added together, clears the dock
  *      threshold, the hud must be docked - not floating over the picture
  *   3. a docked hud must have a non-zero bar
- *   4. the hud's CONTENT must fit inside the hud's box - a bar is only as tall
+ *   4. a docked hud must get ALL of the free space, not one strip of it: the
+ *      bar has to measure the same as the total slack, and the frame has to
+ *      sit flush against the opposite edge. This is the one that fails on the
+ *      version that took a single strip whenever a single strip was wide
+ *      enough - at 1920x1080 that gave a 240px bar against 480px of slack.
+ *   5. the hud's CONTENT must fit inside the hud's box - a bar is only as tall
  *      as the geometry allows, and readings that wrap spill off the screen
- *   5. the layout must settle: sampled three times, the numbers must not flap
+ *   6. the layout must settle: sampled three times, the numbers must not flap
  *      (docking insets the frame, so a measurement taken FROM the frame box
  *      would oscillate - this is the check that would catch that)
- *   6. no console errors
+ *   7. no console errors
  *
  *   node scripts/measure-overcam.mjs <url> [wxh,wxh,...]
  *   PLACEMENT='{"mode":"dock","anchor":"left-center","side":"left"}' node ... <url>
@@ -213,6 +218,38 @@ try {
 
         if (docked && result.overlapsImage) fail(label, 'docked hud overlaps the painted image')
         if (docked && !(result.dock.size > 0)) fail(label, 'docked with a zero-width bar')
+
+        /*
+         * The bar is the SUM of the letterboxing, not one strip of it.
+         *
+         * With the frame pushed against the far edge, whatever the frame does not
+         * paint IS the bar - so the total slack the probe measures and the bar the
+         * page reserved have to be the same number. They come from opposite ends:
+         * `dock.size` is what the component decided, `freeTotal` is measured off the
+         * pixels the image actually covers. A bar that took only half the room shows
+         * up here as half the slack, which is exactly the bug.
+         *
+         * It holds for a hand-made dock too, where the bar can be WIDER than the
+         * letterboxing gave: the frame is then scaled down into what is left and
+         * fills it, so the leftover is still exactly the bar.
+         */
+        if (docked) {
+            const free = result.dock.axis === 'vertical' ? result.freeTotal.horizontal : result.freeTotal.vertical
+            if (Math.abs(free - result.dock.size) > 2)
+                fail(label, `bar is ${result.dock.size}px but ${free}px is free - the far bar was left empty`)
+
+            if (!result.dock.shift) fail(label, 'docked without moving the frame aside')
+
+            // and the frame really is flush against the opposite edge
+            const flush = {
+                left: result.painted.l - result.dock.size,
+                right: result.painted.l,
+                top: result.painted.t - result.dock.size,
+                bottom: result.painted.t,
+            }[result.dock.side]
+            if (Math.abs(flush) > 2)
+                fail(label, `frame is ${flush}px off the edge opposite a ${result.dock.side} bar`)
+        }
 
         // 2px of tolerance: sub-pixel rounding on a scaled layout, not a wrap
         if (result.contentOverflow > 2) fail(label, `hud content spills ${result.contentOverflow}px out of its box`)

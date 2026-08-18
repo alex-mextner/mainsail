@@ -185,7 +185,13 @@ try {
     )
     check(s.size >= 200, `the column is at least the readable minimum (${s.size}px)`)
     check(s.overlapsImage === false, 'the docked hud does not cover the picture')
-    check(s.painted.l >= s.size - 1, `the frame moved aside for it (painted starts at ${s.painted.l}px)`)
+    // flush, not merely "somewhere to the right": the bar takes all the room there
+    // is on that side and the frame starts exactly where the bar ends. A frame that
+    // stopped short would mean a strip of black left over next to the hud.
+    check(
+        Math.abs(s.painted.l - s.size) <= 2,
+        `the frame sits flush against the column (bar ${s.size}px, painted starts at ${s.painted.l}px)`
+    )
 
     // --- 4: stored as names, and it survives a reload ---------------------
     console.log('stored:', s.stored)
@@ -231,6 +237,10 @@ try {
         'dropping on the top edge docks into a top row'
     )
     check(s.overlapsImage === false, 'the top row does not cover the picture either')
+    check(
+        Math.abs(s.painted.t - s.size) <= 2,
+        `and the frame dropped flush below it (row ${s.size}px, painted starts at ${s.painted.t}px)`
+    )
 
     // --- the record the previous version wrote ----------------------------
     // It only knew `pinned`, ANY drag set it, and it then suppressed docking for
