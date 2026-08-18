@@ -42,9 +42,14 @@
             </div>
 
             <!--
-                Idle / loading / error all show the slicer thumbnail, which is already in the
-                gcode and costs 13 kB. The button on top of it is the ONE explicit click that
-                buys the 3D scene, and it says what that click costs.
+                Idle / loading / empty / error all show the slicer thumbnail, which is already
+                in the gcode and costs 13 kB. The button on top of it is the ONE explicit click
+                that buys the 3D scene, and it says what that click costs.
+
+                'empty' is disabled on purpose: the file has been read and there is provably
+                nothing in it to draw, so pressing again would only download it a second time.
+                It stops being a button and becomes a caption - which is the whole point, since
+                a thumbnail with no explanation is exactly what got read as "it is broken".
             -->
             <button
                 v-if="state !== 'live'"
@@ -52,7 +57,7 @@
                 class="webcam-hud-model__preview"
                 :class="{ 'webcam-hud-model__preview--bare': !thumbnail }"
                 data-overcam-model-load
-                :disabled="state === 'loading'"
+                :disabled="state === 'loading' || state === 'empty'"
                 :title="loadTitle"
                 @click="load">
                 <!--
@@ -71,9 +76,13 @@
                     :src="thumbnail"
                     :alt="filename"
                     draggable="false" />
-                <span class="webcam-hud-model__cta">
+                <span class="webcam-hud-model__cta" :class="{ 'webcam-hud-model__cta--wrap': state === 'empty' }">
                     <v-progress-circular v-if="state === 'loading'" indeterminate size="18" width="2" color="white" />
-                    <v-icon v-else small dark>{{ state === 'error' ? mdiAlertOutline : mdiRotate3dVariant }}</v-icon>
+                    <v-icon v-else small dark>{{ ctaIcon }}</v-icon>
+                    <!--
+                        The empty message is a whole sentence, so it is allowed to wrap and to
+                        take the width it needs; every other label here is two or three words.
+                    -->
                     <span class="webcam-hud-model__cta-text">{{ ctaLabel }}</span>
                 </span>
             </button>
@@ -88,10 +97,12 @@ import BaseMixin from '@/components/mixins/base'
 import { escapePath, formatFilesize } from '@/plugins/helpers'
 import { FileStateFileThumbnail } from '@/store/files/types'
 import { webcamHudModelMinSide, webcamHudModelRenderQuality } from '@/store/variables'
-import { mdiAlertOutline, mdiCameraRetake, mdiClose, mdiRotate3dVariant } from '@mdi/js'
+import { mdiAlertOutline, mdiCameraRetake, mdiClose, mdiCubeOffOutline, mdiRotate3dVariant } from '@mdi/js'
 import type { GCodeViewerInstance } from '@/store/gcodeviewer/types'
 
-type ModelState = 'idle' | 'loading' | 'live' | 'error'
+// 'empty' is not a failure: the file was read, and it genuinely has no shape in it.
+// It is kept apart from 'error' because the two need different words - see ctaLabel.
+type ModelState = 'idle' | 'loading' | 'live' | 'empty' | 'error'
 
 // Whether the user has already paid the one explicit click. Per browser, like the hud
 // placement next to it: the tablet at the machine wants the model up permanently, a phone
@@ -100,11 +111,72 @@ type ModelState = 'idle' | 'loading' | 'live' | 'error'
 // not a chore to repeat.
 const modelOptInKey = 'webcamHudModelOptIn'
 
+/*
+ * Does this file ever push filament?
+ *
+ * It has to be answered from the g-code itself, because Moonraker's metadata cannot answer
+ * it: `endurance_v300.gcode` on this machine is a real Orca print with every E word stripped
+ * out for a motion test, and it reports the SAME `filament_total: 4662.23` as the print it
+ * was made from - the header comments the estimate is read from survived the stripping.
+ * Measured 2026-08-18, both files, same number to the second decimal.
+ *
+ * The scan stops at the first extruding move, so a real print costs a few kilobytes of regexp
+ * (3.8 MB `cube_accel4000.gcode`: 0.1 ms); only a file that has none is read to the end, and
+ * the largest one on this machine, 3.0 MB of pure motion, takes 9.5 ms. Both measured.
+ *
+ * Deliberately narrow: it says "no move in this file ever advances the extruder", which is
+ * exactly the sentence the tile then puts on the screen. Anything subtler - a file with
+ * moves the renderer still cannot turn into geometry - is left to the catch below and keeps
+ * saying "unavailable", because for that case "there is nothing to draw" would be a guess.
+ */
+const extrudingMove = /(?:^|\n)[ \t]*[gG](?:0|1|00|01)(?![0-9.])[^;\n]*?[ \t][eE](-?[0-9]*\.?[0-9]+)/g
+
+function hasExtrusion(gcode: string): boolean {
+    extrudingMove.lastIndex = 0
+
+    let match: RegExpExecArray | null
+    while ((match = extrudingMove.exec(gcode)) !== null) {
+        if (Number(match[1]) > 0) return true
+    }
+
+    return false
+}
+
+/*
+ * The g-code roles OrcaSlicer writes that @sindarius/gcodeviewer 3.7.17 has no entry for.
+ *
+ * The library keeps one colour table per slicer (`SlicerSpecific/*.js`) and looks the
+ * `;TYPE:` value up in it. A value that is not in the table makes `isPerimeter()` and
+ * `isSupport()` throw on `featureList[undefined].perimeter`; the library catches that and
+ * calls `reportMissingFeature()`, which writes **console.error**. Nothing else happens - the
+ * segment is simply drawn in the fallback grey.
+ *
+ * That one red line is why this bug was reported as "the 3D model does not load": the user's
+ * console showed `Missing feature Brim` and nothing else obvious, on a file that also
+ * happened to have no extrusion. The two are unrelated. Registering the roles removes the
+ * red herring AND gives the brim a colour.
+ *
+ * The names are not guessed - they are `ExtrusionEntity::role_to_string()` in OrcaSlicer's
+ * own source (`src/libslic3r/ExtrusionEntity.cpp`), which is the function that writes the
+ * `;TYPE:` comment. Of its twenty roles the library knows fourteen; these are the six it
+ * does not, each pointed at the entry the library already has for the closest role, so no
+ * colour is invented here and the `perimeter`/`support` flags come from a real entry.
+ */
+const orcaFeatureAliases: Record<string, string> = {
+    Brim: 'Skirt',
+    Ironing: 'Top surface',
+    'Gap infill': 'Internal solid infill',
+    'Support transition': 'Support interface',
+    Multiple: 'Custom',
+    Undefined: 'Custom',
+}
+
 @Component
 export default class WebcamHudModel extends Mixins(BaseMixin) {
     mdiAlertOutline = mdiAlertOutline
     mdiCameraRetake = mdiCameraRetake
     mdiClose = mdiClose
+    mdiCubeOffOutline = mdiCubeOffOutline
     mdiRotate3dVariant = mdiRotate3dVariant
 
     @Ref('root') readonly root!: HTMLDivElement
@@ -176,6 +248,7 @@ export default class WebcamHudModel extends Mixins(BaseMixin) {
 
     get ctaLabel(): string {
         if (this.state === 'loading') return this.$t('Panels.WebcamPanel.Hud.ModelLoading').toString()
+        if (this.state === 'empty') return this.$t('Panels.WebcamPanel.Hud.ModelEmpty').toString()
         if (this.state === 'error') return this.$t('Panels.WebcamPanel.Hud.ModelFailed').toString()
 
         const size = this.fileSize ? ` · ${formatFilesize(this.fileSize)}` : ''
@@ -183,7 +256,16 @@ export default class WebcamHudModel extends Mixins(BaseMixin) {
         return `${this.$t('Panels.WebcamPanel.Hud.ModelShow')}${size}`
     }
 
+    get ctaIcon(): string {
+        if (this.state === 'empty') return this.mdiCubeOffOutline
+        if (this.state === 'error') return this.mdiAlertOutline
+
+        return this.mdiRotate3dVariant
+    }
+
     get loadTitle(): string {
+        if (this.state === 'empty') return this.$t('Panels.WebcamPanel.Hud.ModelEmptyTitle').toString()
+
         return this.$t('Panels.WebcamPanel.Hud.ModelShowTitle').toString()
     }
 
@@ -328,14 +410,33 @@ export default class WebcamHudModel extends Mixins(BaseMixin) {
         }
 
         try {
-            await this.ensureViewer()
-            if (stale()) return
-
             const url = `${this.apiUrl}/server/files/gcodes/${escapePath(wanted)}`
             const response = await fetch(url, { credentials: 'omit' })
             if (!response.ok) throw new Error(`${response.status} ${response.statusText}`)
 
             const text = await response.text()
+            if (stale()) return
+
+            /*
+             * Read the file BEFORE the engine, and go no further when there is nothing in it
+             * to draw. Half the g-code on this machine is a motion diagnostic with the
+             * extruder never touched, and handing one of those to the library throws inside
+             * babylon's CreateLineSystem - which is what used to land here as a bare "3D
+             * model unavailable", i.e. as if something were broken. It is not: there is
+             * simply no shape in the file, and the tile now says so.
+             *
+             * Bailing out here also means the 320 kB engine is never fetched and 4 MB are
+             * never parsed for a file that has no geometry in it.
+             */
+            if (!hasExtrusion(text)) {
+                this.loadedFile = wanted
+                this.state = 'empty'
+                // the click was answered, so the next file still auto-loads
+                this.optedIn = true
+                return
+            }
+
+            await this.ensureViewer()
             if (stale() || !this.viewer) return
 
             await this.viewer.processFile(text)
@@ -351,7 +452,9 @@ export default class WebcamHudModel extends Mixins(BaseMixin) {
             this.frameModel()
         } catch (error) {
             // a file deleted while print_stats still names it, a printer that went away, a
-            // browser without webgl: all of them end here, quietly, back on the thumbnail
+            // browser without webgl: all of them end here, quietly, back on the thumbnail.
+            // "the file has no geometry in it" is NOT one of them any more - that is caught
+            // above and gets its own words, because it is not a fault.
             if (this.destroyed) return
             this.state = 'error'
             window.console.warn(
@@ -418,6 +521,7 @@ export default class WebcamHudModel extends Mixins(BaseMixin) {
          */
         viewer.renderQuality = webcamHudModelRenderQuality
         viewer.gcodeProcessor.setLiveTracking(false)
+        this.teachOrcaFeatures(viewer.gcodeProcessor)
         /*
          * Not optional, and not obvious. The library only ever assigns scene.clipPlane from
          * the render observables of the meshes it marks "clip ignore" (bed, axes) - so with
@@ -436,6 +540,64 @@ export default class WebcamHudModel extends Mixins(BaseMixin) {
 
         this.viewer = viewer
         this.watchCamera()
+    }
+
+    /*
+     * Teach the library the OrcaSlicer roles it does not know (see orcaFeatureAliases above).
+     *
+     * There is no public seam for this: the slicer object is built inside processFile(), from
+     * a factory the package does not export, and thrown away on the next file. So the FIELD it
+     * lands in is intercepted - `gcodeProcessor.slicer` is a plain data property, and an
+     * accessor put on the instance sees every assignment the library makes to it, in time to
+     * fill in the table before a single `;TYPE:` line is looked up. Nothing is monkey-patched
+     * on the prototype, so no other user of the package is affected.
+     *
+     * The entries are copied from ones the library already ships, so the `perimeter`/`support`
+     * flags stay meaningful and no colour is invented; the Color4 is cloned rather than shared,
+     * because the processor hands these objects out and a shared one would tint two roles at
+     * once if anything ever wrote to it.
+     *
+     * reportMissingFeature() is replaced as well - not silenced. A role nobody has heard of is
+     * still worth knowing about, but it is a COLOUR falling back to grey, and the library
+     * reports it with console.error. That single red line is what made this look like a
+     * crashed viewer; it is now a console.debug that says what actually happened.
+     */
+    teachOrcaFeatures(processor: any) {
+        if (!processor) return
+
+        let slicer: any = null
+        try {
+            Object.defineProperty(processor, 'slicer', {
+                configurable: true,
+                enumerable: true,
+                get: () => slicer,
+                set: (value: any) => {
+                    slicer = value
+                    if (!value) return
+
+                    const list = value.featureList
+                    if (list) {
+                        for (const [role, alias] of Object.entries(orcaFeatureAliases)) {
+                            if (Object.prototype.hasOwnProperty.call(list, role)) continue
+
+                            const template = list[alias]
+                            if (!template) continue
+
+                            list[role] = { ...template, color: template.color?.clone?.() ?? template.color }
+                        }
+                    }
+
+                    value.reportMissingFeature = (feature: string) => {
+                        if (value.missingFeatures?.includes(feature)) return
+
+                        value.missingFeatures?.push(feature)
+                        window.console.debug(`[overcam] g-code feature drawn in the fallback grey: ${feature}`)
+                    }
+                },
+            })
+        } catch {
+            /* the library changed shape: the tile still works, it is just noisier */
+        }
     }
 
     /*
@@ -483,11 +645,7 @@ export default class WebcamHudModel extends Mixins(BaseMixin) {
         }
 
         const span = extents
-            ? Math.max(
-                  extents.max.x - extents.min.x,
-                  extents.max.y - extents.min.y,
-                  extents.max.z - extents.min.z
-              )
+            ? Math.max(extents.max.x - extents.min.x, extents.max.y - extents.min.y, extents.max.z - extents.min.z)
             : 0
 
         if (!extents || !isFinite(span) || span <= 0) {
@@ -660,6 +818,22 @@ export default class WebcamHudModel extends Mixins(BaseMixin) {
 .webcam-hud-model__cta-text {
     overflow: hidden;
     text-overflow: ellipsis;
+}
+
+/* "Show in 3D · 4.0 MB" is three words and is meant to stay on one line, ellipsised if the
+   bar is narrow. The empty-file message is a SENTENCE, and a sentence cut off at "this file
+   has no…" would explain nothing - which is the one thing this state exists to do. So it
+   wraps instead, and is given the room to. */
+.webcam-hud-model__cta--wrap {
+    max-width: calc(100% - 16px);
+    white-space: normal;
+    text-align: center;
+    line-height: 1.25;
+}
+
+.webcam-hud-model__cta--wrap .webcam-hud-model__cta-text {
+    overflow: visible;
+    text-overflow: clip;
 }
 
 /* nothing to sit under: files sliced without a thumbnail (hand written test gcode, and every

@@ -1106,6 +1106,8 @@
                 "Fullscreen": "Fullscreen",
                 "HideHud": "Hide overlay",
                 "Layer": "Layer",
+                "ModelEmpty": "Nothing to show in 3D: this file has no extrusion moves",
+                "ModelEmptyTitle": "The whole g-code was read and no move in it feeds filament, so there is no shape to draw. This is normal for motion and calibration files.",
                 "ModelFailed": "3D model unavailable",
                 "ModelHide": "Hide the 3D model",
                 "ModelLoading": "Loading 3D model",
