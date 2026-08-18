@@ -481,7 +481,22 @@ onBeforeUnmount(() => {
                 :disabled="state === 'loading'"
                 title="Download the g-code and show the part in 3D. Drag it with the mouse to turn it."
                 @click="load">
-                <img v-if="thumbnailUrl" :src="thumbnailUrl" :alt="filename" class="max-h-full max-w-full object-contain opacity-75" />
+                <!--
+                    draggable="false" is not cosmetic. An <img> is a native drag
+                    source: pressing on the thumbnail and moving starts the
+                    browser's own drag-and-drop with a ghost image, and while that
+                    gesture is running every following click is swallowed - so the
+                    button stops responding until the page is clicked somewhere
+                    else. Reproduced with a real pointer; that press-and-move is
+                    exactly what someone tries when they see a picture and expect
+                    to be able to turn it.
+                -->
+                <img
+                    v-if="thumbnailUrl"
+                    :src="thumbnailUrl"
+                    :alt="filename"
+                    draggable="false"
+                    class="max-h-full max-w-full [-webkit-user-drag:none] object-contain opacity-75 select-none" />
                 <span
                     class="flex max-w-full items-center gap-1.5 rounded-xl bg-black/60 px-2.5 py-0.5 text-[0.7rem] tracking-[0.04em] whitespace-nowrap text-white"
                     :class="thumbnailUrl ? 'absolute bottom-1 left-1/2 -translate-x-1/2' : ''">

@@ -201,7 +201,18 @@ const rootClass = computed(() => [
             is 420px wide and sits ON the picture, so a model there would cover
             the very thing being watched.
         -->
-        <WebcamHudModel v-if="showModel" :class="isHorizontal ? 'my-0 aspect-square max-w-[40%] flex-none self-stretch' : ''" />
+        <!--
+            v-show and NOT v-if, which is the difference between one download and
+            one per button press. Undocking destroys the tile under v-if, and a
+            re-docked tile starts from nothing: engine rebuilt, 4 MB of g-code
+            pulled off the printer's SD card again. Measured on the live Vue 2
+            build - ten dock/undock cycles cost eleven downloads. Hidden with
+            `display: none` the box measures 0, so the tile stops drawing by its
+            own floor rule and the scene simply waits.
+        -->
+        <WebcamHudModel
+            v-show="showModel"
+            :class="isHorizontal ? 'my-0 aspect-square max-w-[40%] flex-none self-stretch' : ''" />
 
         <!-- In a side bar the chart is pushed to the bottom so the column fills
              the whole bar instead of leaving a gap under the numbers. -->

@@ -123,8 +123,11 @@ const state = () => {
                 : null,
         stored: localStorage.getItem('webcamHudPlacement') ?? localStorage.getItem('mainsail-next.webcamHudPlacement'),
         model: (() => {
+            // getClientRects(), not just "exists": the tile stays mounted while the hud
+            // floats (that is what keeps a loaded scene alive across an undock) and is
+            // hidden with `display: none`, where every coordinate reads zero.
             const tile = document.querySelector('[data-overcam-model]')
-            if (!tile) return null
+            if (!tile?.getClientRects().length) return null
             return {
                 state: tile.dataset.overcamModelState ?? '',
                 camera: tile.dataset.overcamModelCamera ?? '',
@@ -246,6 +249,14 @@ try {
     page.on('console', (m) => m.type() === 'error' && !thirdPartyNoise.test(m.text()) && errors.push(m.text()))
     page.on('pageerror', (e) => errors.push(String(e)))
 
+    // How many times the whole g-code came off the printer. The tile is allowed
+    // exactly one per file; everything else is the SD card being read for nothing.
+    let gcodeFetches = 0
+    page.on(
+        'response',
+        (r) => r.url().includes('/server/files/gcodes/') && r.url().endsWith('.gcode') && (gcodeFetches += 1)
+    )
+
     await page.goto(url, { waitUntil: 'networkidle2', timeout: 30000 })
     await page.waitForFunction(() => document.body.innerText.includes('ETA'), { timeout: 25000 })
     await sleep(3500)
@@ -326,6 +337,10 @@ try {
 
         // The guard first, and on the THUMBNAIL, so this runs whatever the printer has loaded.
         // Without it the overlay is dragged out of its bar the moment the tile is touched.
+        // Note this drag both starts and ends inside the preview button, so the browser also
+        // fires a click and the load is already under way by the time the explicit click
+        // below lands - which the 'loading' guard absorbs. Do not read anything into which
+        // of the two started it.
         const afterTileDrag = await dragInsideTile(beforeModel.model.box)
         check(
             placementOf(afterTileDrag) === placementOf(beforeModel),
@@ -358,6 +373,29 @@ try {
             )
             check(placementOf(turned) === placementOf(loaded), 'and it still does NOT drag the overlay out of its bar')
             await page.screenshot({ path: `${outDir}/overcam-model-turned.png` })
+
+            /*
+             * Undocking must not throw the scene away. Mounted under `v-if` it did:
+             * the tile was destroyed, and re-docking rebuilt the engine and pulled the
+             * whole g-code off the printer's SD card again - measured at eleven
+             * downloads for ten dock/undock cycles on the live build, every one of them
+             * competing with the print for the same card. Counting bytes off the wire is
+             * the only way to see this; the tile looks identical either way.
+             */
+            const before = gcodeFetches
+            for (let i = 0; i < 3; i++) {
+                await page.click('[data-overcam-dock-toggle]')
+                await sleep(600)
+                await page.click('[data-overcam-dock-toggle]')
+                await sleep(1200)
+            }
+            await sleep(1500)
+            const survived = await page.evaluate(state)
+            check(
+                gcodeFetches === before,
+                `undocking and re-docking three times downloaded the g-code ${gcodeFetches - before} more time(s)`
+            )
+            check(survived.model?.state === 'live', 'and the scene is still there afterwards')
         } else {
             /*
              * The scene did not come up, and there are three honest reasons for that, none of

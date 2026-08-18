@@ -141,7 +141,15 @@ const probe = () => {
      * Addressed through data-overcam-* like everything else here, so the same assertions
      * run against the Vue 2 build and the Vue 3 port.
      */
-    const tile = container.querySelector('[data-overcam-model]')
+    /*
+     * `getClientRects()`, not merely "the element exists": the tile stays MOUNTED
+     * when the hud is not docked (that is what keeps the loaded scene alive across
+     * an undock) and is hidden with `display: none`. A hidden element still answers
+     * querySelector, and its rectangle is all zeros - which would read as a tile
+     * showing at the top left corner, spilling out of everything.
+     */
+    const mounted = container.querySelector('[data-overcam-model]')
+    const tile = mounted?.getClientRects().length ? mounted : null
     const stats = container.querySelector('[data-overcam-stats]')
     const chart = container.querySelector('[data-overcam-chart]')
     const rect = (el) => {
