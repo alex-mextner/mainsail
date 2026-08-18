@@ -13,6 +13,7 @@ import ToolheadControlPanel from '@/components/panels/ToolheadControlPanel.vue'
 import WebcamPanel from '@/components/panels/WebcamPanel.vue'
 import MiscellaneousPanel from '@/components/panels/MiscellaneousPanel.vue'
 import LedEffectsPanel from '@/components/panels/LedEffectsPanel.vue'
+import SpoolmanPanel from '@/components/panels/SpoolmanPanel.vue'
 
 /**
  * Mainsail's dashboard: panels distributed across 1-3 columns depending on the
@@ -29,8 +30,8 @@ import LedEffectsPanel from '@/components/panels/LedEffectsPanel.vue'
  * the control panels sit in the first column, temperature in the second, and
  * macros directly after the extruder in every one of them.
  *
- * Panels that appear in NO default layout -- led-effects, and later afc / mmu /
- * spoolman -- are not homeless upstream either: `gui/getters.getPanels` appends
+ * Panels that appear in NO default layout -- led-effects, spoolman, and later
+ * afc / mmu -- are not homeless upstream either: `gui/getters.getPanels` appends
  * everything from `allDashboardPanels` that the stored layout does not mention
  * to the END of column 1, visible. That is where they go here, for the same
  * reason: those panels only exist when the hardware does, so they cannot be in
@@ -54,6 +55,7 @@ type FixedPanel =
     | 'webcam'
     | 'miscellaneous'
     | 'ledeffects'
+    | 'spoolman'
 
 /** A macro group renders one panel each, so the list cannot be a fixed union. */
 type PanelEntry = { kind: FixedPanel } | { kind: 'macrogroup'; id: string }
@@ -90,6 +92,7 @@ const columns = computed<{ span: string; panels: PanelEntry[] }[]>(() => {
                         ...macros,
                         { kind: 'miscellaneous' },
                         { kind: 'ledeffects' },
+                        { kind: 'spoolman' },
                         { kind: 'temperature' },
                         { kind: 'miniconsole' },
                     ],
@@ -107,6 +110,7 @@ const columns = computed<{ span: string; panels: PanelEntry[] }[]>(() => {
                         ...macros,
                         { kind: 'miscellaneous' },
                         { kind: 'ledeffects' },
+                        { kind: 'spoolman' },
                     ],
                 },
                 { span: 'col-span-6', panels: [{ kind: 'temperature' }, { kind: 'miniconsole' }] },
@@ -123,6 +127,7 @@ const columns = computed<{ span: string; panels: PanelEntry[] }[]>(() => {
                         ...macros,
                         { kind: 'miscellaneous' },
                         { kind: 'ledeffects' },
+                        { kind: 'spoolman' },
                     ],
                 },
                 { span: 'col-span-7', panels: [{ kind: 'temperature' }, { kind: 'miniconsole' }] },
@@ -138,6 +143,7 @@ const columns = computed<{ span: string; panels: PanelEntry[] }[]>(() => {
                         ...macros,
                         { kind: 'miscellaneous' },
                         { kind: 'ledeffects' },
+                        { kind: 'spoolman' },
                     ],
                 },
                 // Upstream's widescreen third column starts with the webcam and
@@ -175,6 +181,7 @@ const keyOf = (panel: PanelEntry) => (panel.kind === 'macrogroup' ? `macrogroup-
                     <MacrogroupPanel v-else-if="panel.kind === 'macrogroup'" :group-id="panel.id" />
                     <MiscellaneousPanel v-else-if="panel.kind === 'miscellaneous'" />
                     <LedEffectsPanel v-else-if="panel.kind === 'ledeffects'" />
+                    <SpoolmanPanel v-else-if="panel.kind === 'spoolman'" />
                     <TemperaturePanel v-else-if="panel.kind === 'temperature'" />
                     <MiniconsolePanel v-else-if="panel.kind === 'miniconsole'" />
                 </template>
