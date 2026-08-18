@@ -41,6 +41,16 @@ const ACTIVITY_KEY = 'overcam.light.activity'
  */
 const ACTIVITY_EVENTS = ['pointerdown', 'pointermove', 'keydown', 'wheel', 'touchstart'] as const
 
+/** How often a stream of pointer movement is allowed to do real work. */
+const ACTIVITY_THROTTLE_MS = 5_000
+
+/** Heartbeat period: often enough that a peer never looks stale inside the
+ *  idle window, capped so the production case is a write every 30s and not
+ *  every 100s. */
+function heartbeatMs(idleTimeoutMs: number): number {
+    return Math.max(250, Math.min(30_000, Math.floor(idleTimeoutMs / 3)))
+}
+
 /**
  * Exactly the three Moonraker calls this feature makes, and nothing else.
  *
@@ -201,6 +211,20 @@ export function attachOvercamLight(options: BrowserLightOptions): () => void {
             delete map[tabId]
             writeActivityMap(map)
         },
+        /**
+         * Moonraker over plain HTTP, same origin - nginx proxies /printer/ on
+         * both the port-80 build and the :8090 port, so this is the same
+         * Moonraker the websocket talks to. sendBeacon is the only send that
+         * survives an unloading page; a websocket frame queued at that moment
+         * is simply discarded.
+         */
+        sendGcodeBeacon: (script: string) => {
+            try {
+                navigator.sendBeacon(`/printer/gcode/script?script=${encodeURIComponent(script)}`)
+            } catch {
+                /* nothing useful to do here - the page is already going away */
+            }
+        },
     }
 
     const light = new OvercamLight(io, { idleTimeoutMs })
@@ -240,7 +264,73 @@ export function attachOvercamLight(options: BrowserLightOptions): () => void {
         publish()
     }
 
+    /**
+     * 🔴 Throttled, because `pointermove` is in the list. Unthrottled, every
+     * mouse movement would run a synchronous localStorage round trip
+     * (getItem + JSON.parse + JSON.stringify + setItem) plus four dataset
+     * writes - 60-100 times a second, on the page whose entire job is
+     * rendering an MJPEG stream, on a tablet. A five-minute rule does not need
+     * sub-second resolution.
+     *
+     * The throttle only applies in the steady state where a mouse move has
+     * nothing to change: we already hold the light and no timer is running.
+     * Anything that actually needs doing - re-lighting after a release,
+     * cancelling an armed timer - still goes through immediately, so the
+     * response to real activity is never delayed.
+     */
+    let lastActivityAt = 0
+
     const onActivity = () => {
+        const now = Date.now()
+        if (light.phase === 'owned' && light.active && now - lastActivityAt < ACTIVITY_THROTTLE_MS) return
+
+        lastActivityAt = now
+        light.onActive()
+        publish()
+    }
+
+    /**
+     * A tab that is being watched but not touched - which is the normal way to
+     * watch a camera - would otherwise let its timestamp go stale and be read
+     * by other tabs as dead. The concrete failure: two /overcam tabs, you
+     * navigate one away, its release sees no live peer and darkens the strip
+     * out from under the tab you are still watching (whose own phase is
+     * 'owned', so nothing in it would re-light).
+     *
+     * Scaled to the idle timeout rather than fixed, so a harness that collapses
+     * five minutes into seconds gets a heartbeat that still beats inside the
+     * window it is testing.
+     */
+    const heartbeat = setInterval(() => {
+        if (light.active) io.writeOwnActivity(Date.now())
+    }, heartbeatMs(idleTimeoutMs))
+
+    /**
+     * 🔴 Withdraw this tab from the shared record when the page goes away for
+     * real (reload, closed tab, navigation out of the app) - Vue's unmount
+     * hook does not run on a hard navigation, so without this the entry is
+     * left behind with a heartbeat timestamp from the instant of the reload.
+     * The next incarnation of the page then sees the ghost of its predecessor
+     * as a live peer and refuses its own release, and the feature looks
+     * broken: you blur the tab, the wait passes, and the light stays on.
+     * Caught by the harness, where the shortened idle made a marginal
+     * production race into a reproducible failure.
+     *
+     * ⚠️ This is the ONLY thing hooked to pagehide, and the distinction is the
+     * point: it is a synchronous localStorage write, no network. The release
+     * path stays off this event on purpose - it needs a fresh Moonraker read
+     * it could never await here (see OvercamLight.stop()).
+     */
+    const onPageHide = () => {
+        // Hand the light to the printer BEFORE withdrawing from the shared
+        // record: the peer check inside handOffSync must still see an accurate
+        // picture of who else is watching.
+        light.handOffSync()
+        io.clearOwnActivity()
+    }
+
+    /** bfcache restore: the entry was withdrawn on the way out, so put it back. */
+    const onPageShow = () => {
         light.onActive()
         publish()
     }
@@ -252,6 +342,8 @@ export function attachOvercamLight(options: BrowserLightOptions): () => void {
 
     window.addEventListener('blur', onBlur)
     window.addEventListener('focus', onActivity)
+    window.addEventListener('pagehide', onPageHide)
+    window.addEventListener('pageshow', onPageShow)
     document.addEventListener('visibilitychange', onVisibilityChange)
     ACTIVITY_EVENTS.forEach((name) => window.addEventListener(name, onActivity, { passive: true }))
 
@@ -276,8 +368,11 @@ export function attachOvercamLight(options: BrowserLightOptions): () => void {
     void light.start().then(publish)
 
     return () => {
+        clearInterval(heartbeat)
         window.removeEventListener('blur', onBlur)
         window.removeEventListener('focus', onActivity)
+        window.removeEventListener('pagehide', onPageHide)
+        window.removeEventListener('pageshow', onPageShow)
         document.removeEventListener('visibilitychange', onVisibilityChange)
         ACTIVITY_EVENTS.forEach((name) => window.removeEventListener(name, onActivity))
         delete (window as WindowWithLight).__overcamLight
