@@ -14,6 +14,7 @@
     },
     "dependencies": {
         "@mdi/js": "^7.4.47",
+        "@sindarius/gcodeviewer": "^3.7.17",
         "@vueuse/core": "^13.0.0",
         "class-variance-authority": "^0.7.1",
         "clsx": "^2.1.1",

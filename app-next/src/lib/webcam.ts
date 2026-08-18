@@ -203,3 +203,36 @@ export const WEBCAM_HUD_MARGIN = 16
  * is wide enough that its own edge would be ambiguous.
  */
 export const WEBCAM_HUD_DOCK_ZONE_DEPTH = 64
+
+/*
+ * The 3D tile in the middle of a docked bar.
+ *
+ * It is only ever given the space the readings and the chart did not want, so
+ * this floor is a quality gate rather than a reservation: a scene shown smaller
+ * than this is a smudge, and an empty frame is worse than no frame. 140px is
+ * where a 30 mm cube at the default camera distance still reads as a cube.
+ */
+export const WEBCAM_HUD_MODEL_MIN_SIDE = 140
+
+/*
+ * Render quality handed to @sindarius/gcodeviewer for the tile: 1 = SBC, 2 =
+ * low, up to 6. Assigned as a field rather than through updateRenderQuality(),
+ * which persists to localStorage - see WebcamHudModel.vue.
+ */
+export const WEBCAM_HUD_MODEL_RENDER_QUALITY = 2
+
+/*
+ * A horizontal (letterbox) bar only gets the tile when the window is this wide.
+ *
+ * The row already needs 16 + 260 (file block) + 24 + 588 (six readings) + 24 +
+ * 340 (chart) + 16 = 1268 to hold its content on one line, which is where
+ * WEBCAM_HUD_MIN_ROW_CHART_WIDTH comes from; a square tile of
+ * WEBCAM_HUD_MODEL_MIN_SIDE plus its gap adds 164 on top, so 1240 + 164 = 1404,
+ * rounded up to 1440 for air. Below that the row is left exactly as it was --
+ * the readings are the point.
+ *
+ * This is rare by construction: a letterbox row needs a window TALLER than
+ * width/aspect, so with a 4:3 camera the tile only ever appears on a large
+ * portrait screen (1440x1080 and up).
+ */
+export const WEBCAM_HUD_MIN_ROW_MODEL_WIDTH = 1440

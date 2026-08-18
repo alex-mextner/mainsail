@@ -4,6 +4,7 @@ import { mdiFileOutline } from '@mdi/js'
 import MdiIcon from '@/components/ui/MdiIcon.vue'
 import { Progress } from '@/components/ui/progress'
 import WebcamHudChart from '@/components/webcams/WebcamHudChart.vue'
+import WebcamHudModel from '@/components/webcams/WebcamHudModel.vue'
 import { usePrinterStore } from '@/stores/printer'
 import { useSensorColors } from '@/composables/useSensorColors'
 import { useCurrentFile, formatDuration } from '@/composables/useCurrentFile'
@@ -26,8 +27,9 @@ const props = withDefaults(
         layout?: 'floating' | 'vertical' | 'horizontal'
         chartHeight?: number
         showChart?: boolean
+        showModel?: boolean
     }>(),
-    { layout: 'floating', chartHeight: 110, showChart: true }
+    { layout: 'floating', chartHeight: 110, showChart: true, showModel: false }
 )
 
 const printer = usePrinterStore()
@@ -144,6 +146,7 @@ const rootClass = computed(() => [
         -->
         <div
             class="flex flex-wrap gap-y-1.5"
+            data-overcam-stats
             :class="
                 isHorizontal
                     ? 'flex-1 justify-between gap-x-4'
@@ -186,11 +189,26 @@ const rootClass = computed(() => [
             </div>
         </div>
 
+        <!--
+            Between the readings and the chart, which in a docked bar is the
+            vertical middle - and, since the bar became the sum of both
+            letterbox strips, the empty half of it. In a column the tile eats
+            whatever gap `mt-auto` used to leave; in a row it is a square as
+            tall as the row, which only appears above the width gate so it can
+            never squeeze the numbers onto a second line.
+
+            Floating over the image the tile is left out on purpose: that card
+            is 420px wide and sits ON the picture, so a model there would cover
+            the very thing being watched.
+        -->
+        <WebcamHudModel v-if="showModel" :class="isHorizontal ? 'my-0 aspect-square max-w-[40%] flex-none self-stretch' : ''" />
+
         <!-- In a side bar the chart is pushed to the bottom so the column fills
              the whole bar instead of leaving a gap under the numbers. -->
         <WebcamHudChart
             v-if="showChart"
             :height="chartHeight"
+            data-overcam-chart
             :class="
                 isHorizontal ? 'mt-0 min-w-[160px] flex-[0_1_340px]' : layout === 'vertical' ? 'mt-auto' : 'mt-1'
             " />

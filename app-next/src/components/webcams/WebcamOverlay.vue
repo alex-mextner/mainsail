@@ -23,6 +23,8 @@ import {
     WEBCAM_HUD_MIN_DOCK_HEIGHT,
     WEBCAM_HUD_MIN_DOCK_WIDTH,
     WEBCAM_HUD_MIN_ROW_CHART_WIDTH,
+    WEBCAM_HUD_MIN_ROW_MODEL_WIDTH,
+    WEBCAM_HUD_MODEL_MIN_SIDE,
     type WebcamConfig,
 } from '@/lib/webcam'
 
@@ -253,6 +255,31 @@ const showChart = computed(() => {
     }
 
     return true
+})
+
+/**
+ * The 3D tile only exists in a docked bar. Floating, the hud is a 420px card
+ * lying ON the picture, and putting a model there would hide the thing the page
+ * is for.
+ *
+ * In a column the tile takes the leftover between the readings and the chart and
+ * decides for itself whether that leftover is worth drawing in (see
+ * WEBCAM_HUD_MODEL_MIN_SIDE) -- the only honest place for that call, since the
+ * leftover is not knowable from here. A row has no leftover to take, so the gate
+ * is the window width, up front.
+ */
+const showModel = computed(() => {
+    const axis = dockPlan.value.axis
+    if (axis === 'none') return false
+
+    if (axis === 'horizontal') {
+        return (
+            containerWidth.value >= WEBCAM_HUD_MIN_ROW_MODEL_WIDTH &&
+            dockPlan.value.size >= WEBCAM_HUD_MODEL_MIN_SIDE
+        )
+    }
+
+    return containerHeight.value >= 320
 })
 
 const hudChartHeight = computed(() => {
@@ -506,6 +533,14 @@ function measureGeometry() {
 function onPointerDown(event: PointerEvent) {
     // The chart keeps its own pointer handling (tooltip).
     if ((event.target as HTMLElement)?.closest?.('.webcam-hud-chart')) return
+    /*
+     * ... and so does the 3D tile, for a sharper reason. Babylon's ArcRotateCamera
+     * attaches its own listeners to the canvas and calls preventDefault, but it
+     * does NOT stop propagation -- so without this line a mouse drag on the model
+     * would orbit the camera AND tear the whole overlay out of its bar at the same
+     * time. Turning the part must not move the overlay.
+     */
+    if ((event.target as HTMLElement)?.closest?.('[data-overcam-model]')) return
     if (dragging.value) return
 
     const card = hud.value
@@ -800,7 +835,11 @@ watch(
             @pointermove="onPointerMove"
             @pointerup="onPointerUp"
             @pointercancel="onPointerUp">
-            <WebcamHud :layout="hudLayout" :chart-height="hudChartHeight" :show-chart="showChart" />
+            <WebcamHud
+                :layout="hudLayout"
+                :chart-height="hudChartHeight"
+                :show-chart="showChart"
+                :show-model="showModel" />
         </div>
     </div>
 </template>
