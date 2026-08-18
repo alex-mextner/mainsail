@@ -52,15 +52,22 @@
  * @param {object}   options.gui         Patch merged over the persisted gui state.
  * @param {boolean}  options.blockGcode  Default true. Never pass false unless
  *                                       you intend the printer to move.
+ * @param {object}   options.rpc         Moonraker replies to fake, keyed by
+ *                                       method. See the block below.
+ * @param {string[]} options.components  Optional Moonraker components to add to
+ *                                       the `server.info` reply.
  */
-export async function installRig(page, { status = {}, theme = 'dark', density = 'auto', gui = null, blockGcode = true } = {}) {
+export async function installRig(
+    page,
+    { status = {}, theme = 'dark', density = 'auto', gui = null, blockGcode = true, rpc = {}, components = [] } = {}
+) {
     await page.evaluateOnNewDocument(
-        (statusPatch, t, d, guiPatch, block) => {
+        (statusPatch, t, d, guiPatch, block, rpcPatch, extraComponents) => {
             localStorage.setItem('mainsail-next.theme', t)
             localStorage.setItem('mainsail-next.density', d)
             if (guiPatch) localStorage.setItem('mainsail-next.gui', JSON.stringify(guiPatch))
 
-            window.__rig = { injected: false, gcode: [], blocked: block }
+            window.__rig = { injected: false, gcode: [], blocked: block, rpc: [] }
 
             const isObject = (value) => typeof value === 'object' && value !== null && !Array.isArray(value)
 
@@ -82,6 +89,9 @@ export async function installRig(page, { status = {}, theme = 'dark', density = 
             function Patched(...args) {
                 const socket = new Native(...args)
                 const subscribeIds = new Set()
+                /** id -> method, for the calls listed in `rpc`. */
+                const rpcIds = new Map()
+                const serverInfoIds = new Set()
                 let appHandler = null
 
                 /** Deliver a frame to the app as if the server had sent it. */
@@ -112,6 +122,8 @@ export async function installRig(page, { status = {}, theme = 'dark', density = 
                     // Record the id: a JSON-RPC reply carries only the id, never
                     // the method that produced it.
                     if (frame?.method === 'printer.objects.subscribe') subscribeIds.add(frame.id)
+                    if (frame?.method && frame.method in rpcPatch) rpcIds.set(frame.id, frame.method)
+                    if (frame?.method === 'server.info' && extraComponents.length) serverInfoIds.add(frame.id)
 
                     return nativeSend(payload)
                 }
@@ -134,11 +146,45 @@ export async function installRig(page, { status = {}, theme = 'dark', density = 
                     let data = event.data
                     try {
                         const frame = JSON.parse(data)
+                        let rewritten = false
+
                         if (subscribeIds.has(frame?.id) && isObject(frame?.result?.status)) {
                             merge(frame.result.status, statusPatch)
                             window.__rig.injected = true
-                            data = JSON.stringify(frame)
+                            rewritten = true
                         }
+
+                        /**
+                         * Moonraker calls the panel needs but this server cannot
+                         * answer. Two cases, and both are real:
+                         *   - the call SUCCEEDS and the fake is merged over it
+                         *     (adding a sensor to a server that has some);
+                         *   - the call FAILS, because the component is not
+                         *     loaded at all, and the fake replaces the error.
+                         * The second is what happens here: `server.sensors.list`
+                         * and every `machine.timelapse.*` are 404 on this host.
+                         */
+                        if (rpcIds.has(frame?.id)) {
+                            const patch = rpcPatch[rpcIds.get(frame.id)]
+                            if (isObject(frame.result)) merge(frame.result, patch)
+                            else {
+                                frame.result = JSON.parse(JSON.stringify(patch))
+                                delete frame.error
+                            }
+                            window.__rig.rpc.push(rpcIds.get(frame.id))
+                            rewritten = true
+                        }
+
+                        // Components are what a panel gates on before it calls
+                        // anything, so a faked call is useless without this.
+                        if (serverInfoIds.has(frame?.id) && Array.isArray(frame?.result?.components)) {
+                            for (const name of extraComponents) {
+                                if (!frame.result.components.includes(name)) frame.result.components.push(name)
+                            }
+                            rewritten = true
+                        }
+
+                        if (rewritten) data = JSON.stringify(frame)
                     } catch {
                         /* not JSON -- pass through untouched */
                     }
@@ -157,11 +203,13 @@ export async function installRig(page, { status = {}, theme = 'dark', density = 
         theme,
         density,
         gui,
-        blockGcode
+        blockGcode,
+        rpc,
+        components
     )
 }
 
 /** Read back what the page tried to send. Empty is the expected result. */
 export async function rigReport(page) {
-    return page.evaluate(() => window.__rig ?? { injected: false, gcode: [], blocked: null })
+    return page.evaluate(() => window.__rig ?? { injected: false, gcode: [], blocked: null, rpc: [] })
 }

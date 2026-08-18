@@ -7,6 +7,19 @@
  * that only works inside a template.
  */
 
+/**
+ * `rgb_strip` -> `Rgb Strip`. Upstream's `convertName`, used wherever a raw
+ * Klipper object name is shown to a human. Deliberately dumb: it does not know
+ * that RGB is an initialism, and neither does upstream, so both interfaces
+ * label the same pin identically.
+ */
+export const convertName = (name: string): string =>
+    name
+        .replace(/_/g, ' ')
+        .split(' ')
+        .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
+        .join(' ')
+
 /** "3.8 MB". Upstream's algorithm, including the always-at-least-0.1 floor. */
 export function formatFilesize(bytes: number): string {
     if (!bytes) return '—'
