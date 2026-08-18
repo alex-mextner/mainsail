@@ -13,7 +13,7 @@
             </div>
         </div>
 
-        <div class="webcam-hud__stats">
+        <div class="webcam-hud__stats" data-overcam-stats>
             <div v-for="heater in heaters" :key="heater.key" class="webcam-hud__stat">
                 <span class="webcam-hud__label">
                     <span class="webcam-hud__dot" :style="{ backgroundColor: heater.color }"></span>
@@ -53,7 +53,7 @@
         -->
         <webcam-hud-model v-if="showModel" class="webcam-hud__model" />
 
-        <webcam-hud-chart v-if="showChart" class="webcam-hud__chart" :height="chartHeight" />
+        <webcam-hud-chart v-if="showChart" class="webcam-hud__chart" data-overcam-chart :height="chartHeight" />
     </div>
 </template>
 

@@ -273,16 +273,24 @@ export default class WebcamHudModel extends Mixins(BaseMixin) {
         this.state = 'loading'
         const wanted = this.filename
 
+        // the printer can change the file out from under a load in progress - a job finishing,
+        // a klipper restart, the next print starting. Give up on the old one, and go back to
+        // idle rather than sitting on 'loading' for ever, so the button works again.
+        const stale = () => {
+            if (!this.destroyed && this.filename !== wanted) this.state = 'idle'
+            return this.destroyed || this.filename !== wanted
+        }
+
         try {
             await this.ensureViewer()
-            if (this.destroyed || this.filename !== wanted) return
+            if (stale()) return
 
             const url = `${this.apiUrl}/server/files/gcodes/${escapePath(wanted)}`
             const response = await fetch(url, { credentials: 'omit' })
             if (!response.ok) throw new Error(`${response.status} ${response.statusText}`)
 
             const text = await response.text()
-            if (this.destroyed || this.filename !== wanted || !this.viewer) return
+            if (stale() || !this.viewer) return
 
             await this.viewer.processFile(text)
             if (this.destroyed) return
