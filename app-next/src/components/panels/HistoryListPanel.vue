@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onMounted, ref } from 'vue'
+import { computed, ref } from 'vue'
 import {
     mdiCog,
     mdiDatabaseArrowDownOutline,
@@ -42,11 +42,7 @@ const search = ref('')
 const selected = ref<string[]>([])
 const deleteDialog = ref(false)
 
-onMounted(() => {
-    void history.loadMore()
-    void history.loadTotals()
-})
-
+/** Loading is the page's job, not this panel's -- see pages/HistoryPage.vue. */
 const settings = computed(() => gui.state.view.history)
 
 /** Statuses actually present, with their counts -- upstream's status filter list. */
