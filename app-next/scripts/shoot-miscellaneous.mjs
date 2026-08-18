@@ -66,6 +66,11 @@ try {
     const errors = []
     page.on('console', (m) => m.type() === 'error' && errors.push(m.text()))
     page.on('pageerror', (e) => errors.push(String(e)))
+    // "Failed to load resource: 404" in the console names no URL, which makes
+    // it unactionable noise. Name it here, so a real missing asset is separable
+    // from the one this app cannot help (a proxied camera that is not running).
+    const failed = []
+    page.on('response', (r) => r.status() >= 400 && failed.push(`${r.status()} ${r.url()}`))
 
     /**
      * Sample the panel's SHAPE, not its pixels: how many rows are switches and
@@ -123,10 +128,38 @@ try {
         })
     )
 
+    /**
+     * OPEN_LIGHT=rgb_strip opens that light's colour dialog before the shot.
+     * Clicking a swatch sends nothing by itself -- and if it did, the firewall
+     * above would catch it, which is the whole reason a click is safe to make
+     * against the live printer at all.
+     */
+    if (process.env.OPEN_LIGHT) {
+        const opened = await page.evaluate((name) => {
+            const button = document.querySelector(`[aria-label="Pick a colour for ${name}"]`)
+            if (!button) return false
+            button.click()
+            return true
+        }, process.env.OPEN_LIGHT)
+
+        console.log(`opened ${process.env.OPEN_LIGHT} dialog:`, opened)
+        await new Promise((r) => setTimeout(r, 600))
+
+        const dialog = await page.$('[role="dialog"]')
+        if (dialog) {
+            await dialog.screenshot({ path: out })
+            console.log('saved ' + out)
+            console.log('gcode after opening  :', (await rigReport(page)).gcode)
+            await browser.close()
+            process.exit(0)
+        }
+    }
+
     const panel = await page.$('[data-panel="miscellaneous"]')
     if (panel) await panel.screenshot({ path: out })
     else await page.screenshot({ path: out, fullPage: true })
 
+    console.log('failed requests      :', failed.length ? [...new Set(failed)] : '(none)')
     console.log(errors.length ? 'console errors: ' + errors.join(' | ') : 'no console errors')
     console.log('saved ' + out)
 } finally {
