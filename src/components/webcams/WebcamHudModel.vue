@@ -55,7 +55,22 @@
                 :disabled="state === 'loading'"
                 :title="loadTitle"
                 @click="load">
-                <img v-if="thumbnail" class="webcam-hud-model__thumb" :src="thumbnail" :alt="filename" />
+                <!--
+                    draggable="false" is not cosmetic. An <img> is a native drag
+                    source: pressing on the thumbnail and moving starts the
+                    browser's own drag-and-drop with a ghost image, and while
+                    that gesture is running every following click is swallowed -
+                    so the button stops responding until the page is clicked
+                    somewhere else. Reproduced with a real pointer; the same
+                    press-and-move is exactly what someone tries when they see a
+                    picture and expect to turn it.
+                -->
+                <img
+                    v-if="thumbnail"
+                    class="webcam-hud-model__thumb"
+                    :src="thumbnail"
+                    :alt="filename"
+                    draggable="false" />
                 <span class="webcam-hud-model__cta">
                     <v-progress-circular v-if="state === 'loading'" indeterminate size="18" width="2" color="white" />
                     <v-icon v-else small dark>{{ state === 'error' ? mdiAlertOutline : mdiRotate3dVariant }}</v-icon>
@@ -620,6 +635,9 @@ export default class WebcamHudModel extends Mixins(BaseMixin) {
     max-height: 100%;
     object-fit: contain;
     opacity: 0.75;
+    /* belt and braces with draggable="false" above: webkit needs this one too */
+    -webkit-user-drag: none;
+    user-select: none;
 }
 
 .webcam-hud-model__cta {

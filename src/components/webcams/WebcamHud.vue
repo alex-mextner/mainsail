@@ -51,7 +51,16 @@
             Floating over the image the tile is left out on purpose: that card is 420px wide and
             sits ON the picture, so a model there would cover the very thing being watched.
         -->
-        <webcam-hud-model v-if="showModel" class="webcam-hud__model" />
+        <!--
+            v-show and NOT v-if, which is the difference between one download and
+            one per button press. Undocking destroys the tile under v-if, and a
+            re-docked tile starts from nothing: engine rebuilt, 4 MB of g-code
+            pulled off the printer's SD card again. Measured on the live build -
+            ten dock/undock cycles cost eleven downloads. Hidden with `display:
+            none` the box measures 0, so the tile stops drawing by its own floor
+            rule and the scene simply waits.
+        -->
+        <webcam-hud-model v-show="showModel" class="webcam-hud__model" />
 
         <webcam-hud-chart v-if="showChart" class="webcam-hud__chart" data-overcam-chart :height="chartHeight" />
     </div>
