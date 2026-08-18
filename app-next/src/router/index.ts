@@ -24,6 +24,11 @@ export interface AppRouteMeta extends Record<string | number | symbol, unknown> 
     showInNavi: boolean
     ported: boolean
     position: number
+    /**
+     * Rendered WITHOUT the shell -- no top bar, no drawer, no page padding.
+     * Optional so the nine ordinary routes need no edit. See App.vue.
+     */
+    fullscreen?: boolean
 }
 
 const routes: RouteRecordRaw[] = [
@@ -49,6 +54,25 @@ const routes: RouteRecordRaw[] = [
             showInNavi: true,
             ported: false,
             position: 20,
+        } satisfies AppRouteMeta,
+    },
+    {
+        /**
+         * Fullscreen camera with the hud on top. Deliberately NOT in the
+         * navigation: the sidebar already has "Webcam" for the same camera, and
+         * this route is reached from the expand button and meant to be
+         * bookmarked / opened directly.
+         */
+        name: 'overcam',
+        path: '/overcam/:name?',
+        component: () => import('@/pages/OvercamPage.vue'),
+        meta: {
+            title: 'Webcam',
+            icon: mdiWebcam,
+            showInNavi: false,
+            ported: true,
+            position: 21,
+            fullscreen: true,
         } satisfies AppRouteMeta,
     },
     {

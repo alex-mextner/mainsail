@@ -12,6 +12,12 @@
  *
  * `hoverSelector` dispatches a mouseenter, for previews and hover-only UI, and
  * switches to a viewport-sized shot so the hovered element is actually in frame.
+ *
+ * HEIGHT=1000 overrides the 900px viewport height. It is an env var rather than
+ * another positional argument so the six existing call sites keep working. It
+ * exists because /overcam's layout is driven by the window's ASPECT RATIO: the
+ * camera hud docks into whichever black bar the letterboxing leaves, and at a
+ * fixed 900px height the tall-window cases are simply unreachable.
  */
 import puppeteer from 'puppeteer-core'
 import { existsSync } from 'node:fs'
@@ -35,7 +41,7 @@ const browser = await puppeteer.launch({
 
 try {
     const page = await browser.newPage()
-    await page.setViewport({ width: Number(width), height: 900, deviceScaleFactor: 2 })
+    await page.setViewport({ width: Number(width), height: Number(process.env.HEIGHT ?? 900), deviceScaleFactor: 2 })
     await page.evaluateOnNewDocument((t) => {
         localStorage.setItem('mainsail-next.theme', t)
         localStorage.setItem('mainsail-next.density', 'auto')

@@ -38,6 +38,11 @@ export default defineConfig({
             '/api': { target: moonrakerHost, changeOrigin: true },
             '/access': { target: moonrakerHost, changeOrigin: true },
             '/machine': { target: moonrakerHost, changeOrigin: true },
+            // The camera. `moonrakerHost` is port 80, where nginx already
+            // proxies /webcam/ to mjpg-streamer -- so the whole camera view can
+            // be exercised against the real hardware from a laptop, before any
+            // change is made on the printer itself.
+            '/webcam': { target: moonrakerHost, changeOrigin: true },
         },
     },
     // `vite preview` serves the built bundle. It needs the same proxy as the dev
@@ -53,6 +58,7 @@ export default defineConfig({
             '/api': { target: moonrakerHost, changeOrigin: true },
             '/access': { target: moonrakerHost, changeOrigin: true },
             '/machine': { target: moonrakerHost, changeOrigin: true },
+            '/webcam': { target: moonrakerHost, changeOrigin: true },
         },
     },
     build: {
