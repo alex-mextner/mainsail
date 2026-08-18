@@ -114,12 +114,12 @@ const routes: RouteRecordRaw[] = [
     {
         name: 'history',
         path: '/history',
-        component: () => import('@/pages/PlaceholderPage.vue'),
+        component: () => import('@/pages/HistoryPage.vue'),
         meta: {
             title: 'History',
             icon: mdiHistory,
             showInNavi: true,
-            ported: false,
+            ported: true,
             position: 60,
         } satisfies AppRouteMeta,
     },

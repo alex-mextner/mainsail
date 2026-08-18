@@ -106,6 +106,20 @@ export interface GuiState {
             /** Metadata columns the user switched off, by field name. */
             hideMetadataColumns: string[]
         }
+        history: {
+            /** Column ids the user switched off. Upstream's `hideColums` (sic). */
+            hideColumns: string[]
+            /** Job statuses hidden from the list, e.g. 'cancelled'. */
+            hideStatus: string[]
+            sortBy: string
+            sortDesc: boolean
+            /** `chart` or `table` for the print-status breakdown. */
+            statusView: 'chart' | 'table'
+            /** What the breakdown counts: jobs, filament or time. */
+            statusValue: 'jobs' | 'filament' | 'time'
+            /** Which of the two right-hand charts is shown. */
+            chart: 'filament_usage' | 'printtime_avg'
+        }
         webcam: {
             /**
              * Which camera each surface shows, keyed by surface -- upstream's
@@ -205,6 +219,16 @@ const defaults = (): GuiState => ({
             // narrow screen the table scrolls rather than dropping columns, so
             // hiding is the user's choice, not the layout's.
             hideMetadataColumns: [],
+        },
+        history: {
+            hideColumns: [],
+            hideStatus: [],
+            // Upstream's defaults: newest job first.
+            sortBy: 'start_time',
+            sortDesc: true,
+            statusView: 'chart',
+            statusValue: 'jobs',
+            chart: 'filament_usage',
         },
         webcam: {
             currentCam: { dashboard: 'all', page: 'all' },
