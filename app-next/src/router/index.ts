@@ -8,6 +8,7 @@ import {
     mdiWebcam,
     mdiCog,
     mdiGrid,
+    mdiTimelapse,
 } from '@mdi/js'
 
 /**
@@ -24,6 +25,15 @@ export interface AppRouteMeta extends Record<string | number | symbol, unknown> 
     showInNavi: boolean
     ported: boolean
     position: number
+    /**
+     * Optional Moonraker component this route depends on. Upstream's
+     * `moonrakerComponent` field: the entry is hidden from the navigation when
+     * the component is not loaded, because the page would have nothing to talk
+     * to. Hiding is right here and marking `ported: false` would be wrong --
+     * "soon" says the port is incomplete, and it is the PRINTER that is missing
+     * the feature.
+     */
+    moonrakerComponent?: string
     /**
      * Rendered WITHOUT the shell -- no top bar, no drawer, no page padding.
      * Optional so the nine ordinary routes need no edit. See App.vue.
@@ -129,6 +139,21 @@ const routes: RouteRecordRaw[] = [
         } satisfies AppRouteMeta,
     },
     {
+        name: 'timelapse',
+        path: '/timelapse',
+        component: () => import('@/pages/TimelapsePage.vue'),
+        meta: {
+            title: 'Timelapse',
+            icon: mdiTimelapse,
+            showInNavi: true,
+            ported: true,
+            position: 80,
+            // Third-party Moonraker component, absent on this machine -- so
+            // this entry does not appear in the sidebar here at all.
+            moonrakerComponent: 'timelapse',
+        } satisfies AppRouteMeta,
+    },
+    {
         name: 'machine',
         path: '/machine',
         component: () => import('@/pages/MachinePage.vue'),
@@ -174,9 +199,21 @@ const routes: RouteRecordRaw[] = [
     },
 ]
 
-export const naviRoutes = routes
+const naviCandidates = routes
     .filter((route) => (route.meta as AppRouteMeta | undefined)?.showInNavi)
     .sort((a, b) => (a.meta as AppRouteMeta).position - (b.meta as AppRouteMeta).position)
+
+/**
+ * The sidebar, given the list of components this Moonraker has loaded. A route
+ * that names a component Moonraker does not have is dropped -- upstream's rule.
+ * The ROUTE still exists and still resolves -- a bookmarked /timelapse renders
+ * its page and that page explains itself -- only the sidebar entry is gone.
+ */
+export const naviRoutesFor = (components: string[]) =>
+    naviCandidates.filter((route) => {
+        const component = (route.meta as AppRouteMeta).moonrakerComponent
+        return !component || components.includes(component)
+    })
 
 export const router = createRouter({
     history: createWebHistory(),

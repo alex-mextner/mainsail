@@ -122,7 +122,28 @@ export async function installRig(
                     // Record the id: a JSON-RPC reply carries only the id, never
                     // the method that produced it.
                     if (frame?.method === 'printer.objects.subscribe') subscribeIds.add(frame.id)
-                    if (frame?.method && frame.method in rpcPatch) rpcIds.set(frame.id, frame.method)
+                    /**
+                     * An `rpc` key is either a bare method or `method?k=v`.
+                     * The qualified form exists because ONE method serves
+                     * several roots: `server.files.list` lists the timelapse
+                     * videos AND the log files, and faking it by method alone
+                     * would hand the Machine page's log panel a list of
+                     * timelapses.
+                     */
+                    if (frame?.method) {
+                        for (const key of Object.keys(rpcPatch)) {
+                            const [method, query] = key.split('?')
+                            if (method !== frame.method) continue
+
+                            if (query) {
+                                const [name, value] = query.split('=')
+                                if (String(frame.params?.[name]) !== value) continue
+                            }
+
+                            rpcIds.set(frame.id, key)
+                            break
+                        }
+                    }
                     if (frame?.method === 'server.info' && extraComponents.length) serverInfoIds.add(frame.id)
 
                     return nativeSend(payload)
@@ -139,6 +160,18 @@ export async function installRig(
                         appHandler = fn
                     },
                 })
+
+                /**
+                 * Push a server-initiated frame into the app.
+                 *
+                 * Needed because some states only exist as a NOTIFICATION -- a
+                 * render in progress, a new frame captured -- and there is no
+                 * request whose reply could carry them. Poking the store
+                 * directly would prove the template renders; this proves the
+                 * notification is actually wired to it.
+                 */
+                window.__rigSockets = window.__rigSockets ?? []
+                window.__rigSockets.push({ deliver })
 
                 socket.addEventListener('message', (event) => {
                     if (!appHandler) return

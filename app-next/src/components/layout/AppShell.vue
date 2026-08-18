@@ -4,7 +4,7 @@ import { useRoute } from 'vue-router'
 import { mdiMenu } from '@mdi/js'
 import { useConnectionStore } from '@/stores/connection'
 import { usePrinterStore } from '@/stores/printer'
-import { naviRoutes, type AppRouteMeta } from '@/router'
+import { naviRoutesFor, type AppRouteMeta } from '@/router'
 import { Badge } from '@/components/ui/badge'
 import MdiIcon from '@/components/ui/MdiIcon.vue'
 
@@ -19,6 +19,9 @@ const connection = useConnectionStore()
 const printer = usePrinterStore()
 
 const drawerOpen = ref(false)
+
+/** Recomputed when server.info lands, so an optional page appears on connect. */
+const naviRoutes = computed(() => naviRoutesFor(connection.moonrakerComponents))
 
 const title = computed(() => (route.meta as AppRouteMeta | undefined)?.title ?? 'Mainsail Next')
 
