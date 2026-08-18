@@ -21,6 +21,11 @@
  *      (docking insets the frame, so a measurement taken FROM the frame box
  *      would oscillate - this is the check that would catch that)
  *   7. no console errors
+ *   8. the 3D tile, when it is there, sits BETWEEN the readings and the chart -
+ *      the vertical middle of a docked column, which is what was asked for -
+ *      stays inside the hud's box, never appears over a floating card, and
+ *      stays out of a letterbox row narrower than the gate. A canvas carries no
+ *      text, so check 5 cannot see it: this one measures rectangles instead.
  *
  *   node scripts/measure-overcam.mjs <url> [wxh,wxh,...]
  *   PLACEMENT='{"mode":"dock","anchor":"left-center","side":"left"}' node ... <url>
@@ -40,6 +45,7 @@ const sizes = sizeList.split(',').map((s) => s.split('x').map(Number))
 // Kept in step with src/store/variables.ts (Vue 2) and src/lib/webcam.ts (Vue 3)
 const MIN_DOCK_WIDTH = 200
 const MIN_DOCK_HEIGHT = 90
+const MIN_ROW_MODEL_WIDTH = 1440
 
 /*
  * PLACEMENT seeds the stored placement before the first load, so the same seven
@@ -61,7 +67,8 @@ const candidates = [
 const browser = await puppeteer.launch({
     executablePath: candidates.find((p) => existsSync(p)),
     headless: true,
-    args: ['--no-sandbox', '--disable-dev-shm-usage'],
+    // swiftshader: the 3D tile needs a working webgl context, and headless chrome has no gpu
+    args: ['--no-sandbox', '--disable-dev-shm-usage', '--use-gl=swiftshader', '--enable-unsafe-swiftshader'],
 })
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms))
@@ -129,8 +136,25 @@ const probe = () => {
         }
     }
 
+    /*
+     * The 3D tile: where it is, and whether it is anywhere it has no business being.
+     * Addressed through data-overcam-* like everything else here, so the same assertions
+     * run against the Vue 2 build and the Vue 3 port.
+     */
+    const tile = container.querySelector('[data-overcam-model]')
+    const stats = container.querySelector('[data-overcam-stats]')
+    const chart = container.querySelector('[data-overcam-chart]')
+    const rect = (el) => {
+        if (!el) return null
+        const r = el.getBoundingClientRect()
+        return { l: Math.round(r.left), t: Math.round(r.top), r: Math.round(r.right), b: Math.round(r.bottom) }
+    }
+
     return {
         contentOverflow,
+        model: tile ? { state: tile.dataset.overcamModelState ?? '', box: rect(tile) } : null,
+        statsBox: rect(stats),
+        chartBox: rect(chart),
         dock: {
             axis: container.dataset.dockAxis,
             side: container.dataset.dockSide,
@@ -167,6 +191,10 @@ try {
     const page = await browser.newPage()
     await page.evaluateOnNewDocument((placement) => {
         localStorage.setItem('mainsail-next.theme', 'dark')
+        // this script is about geometry, so the 3D tile is kept on its cheap thumbnail:
+        // the opt-in is what a previous run may have left behind
+        localStorage.removeItem('webcamHudModelOptIn')
+        localStorage.removeItem('mainsail-next.webcamHudModelOptIn')
 
         if (placement) {
             // both keys: the Vue 2 build and the Vue 3 port name it differently,
@@ -253,6 +281,37 @@ try {
 
         // 2px of tolerance: sub-pixel rounding on a scaled layout, not a wrap
         if (result.contentOverflow > 2) fail(label, `hud content spills ${result.contentOverflow}px out of its box`)
+
+        /*
+         * The 3D tile (M1b). Four things, and the first is the point of the whole feature:
+         * it has to be BETWEEN the readings and the chart, which in a docked column is the
+         * vertical middle - the empty half that appeared when the bar became the sum.
+         *
+         * The others are the ways it could break the layout it moved into: it must stay
+         * inside the hud's box, it must never appear over a floating card (that card lies
+         * ON the picture), and it must stay out of a letterbox row too narrow to hold the
+         * readings and a square tile side by side.
+         */
+        if (result.model) {
+            if (!docked) fail(label, 'the 3D tile is showing while the hud floats over the image')
+
+            const box = result.model.box
+            if (result.hud) {
+                const hudBox = { l: result.hud.l, t: result.hud.t, r: result.hud.l + result.hud.w, b: result.hud.t + result.hud.h }
+                const spill = Math.max(hudBox.l - box.l, box.r - hudBox.r, hudBox.t - box.t, box.b - hudBox.b)
+                if (spill > 2) fail(label, `the 3D tile spills ${spill}px out of the hud box`)
+            }
+
+            if (result.dock.axis === 'vertical') {
+                if (result.statsBox && box.t < result.statsBox.b - 2)
+                    fail(label, `the 3D tile (top ${box.t}) is not below the readings (bottom ${result.statsBox.b})`)
+                if (result.chartBox && box.b > result.chartBox.t + 2)
+                    fail(label, `the 3D tile (bottom ${box.b}) is not above the chart (top ${result.chartBox.t})`)
+            }
+
+            if (result.dock.axis === 'horizontal' && result.container.w < MIN_ROW_MODEL_WIDTH)
+                fail(label, `a ${result.container.w}px row shows the 3D tile below the ${MIN_ROW_MODEL_WIDTH}px gate`)
+        }
 
         if (!docked) {
             if (result.freeTotal.horizontal >= MIN_DOCK_WIDTH)

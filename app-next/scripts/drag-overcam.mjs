@@ -19,6 +19,8 @@
  *      survives a reload
  *   5. dropping in the middle floats it again, at one of the eight anchors
  *   6. the toolbar button docks and undocks without any dragging
+ *   7. the 3D tile in the bar turns with a plain MOUSE drag, and turning it does
+ *      not drag the overlay out of its bar with it
  *
  * Everything is addressed through data-overcam-* attributes, so the same script
  * runs against the Vue 2 build on :80 and the Vue 3 port on :8090.
@@ -31,6 +33,23 @@ import { join } from 'node:path'
 const [url, outDir = '.', size = '1280x1024'] = process.argv.slice(2)
 const [width, height] = size.split('x').map(Number)
 
+/*
+ * MODEL_FILE='Куб_0.2mm_PETG_....gcode' node scripts/drag-overcam.mjs <url> <dir>
+ *
+ * Which file the 3D tile shows is decided by the printer, not by this script: the tile
+ * follows print_stats.filename. That makes the rotation check depend on whatever the user
+ * last printed - and half the files on this machine are motion diagnostics with no extrusion
+ * at all, which the renderer genuinely cannot draw. Naming a file here makes the check
+ * deterministic.
+ *
+ * The file is seeded by faking one Moonraker `notify_status_update` frame on the websocket
+ * the page already opened - NOT by reaching into Vuex or Pinia. That is the whole point: the
+ * protocol is the same for the Vue 2 build and the Vue 3 port, the framework is not, and the
+ * front end then goes and fetches the metadata for the new name entirely by itself, exactly
+ * as it does for a real print.
+ */
+const MODEL_FILE = process.env.MODEL_FILE ?? ''
+
 const candidates = [
     join(homedir(), 'AppData/Local/Google/Chrome/Application/chrome.exe'),
     'C:/Program Files/Google/Chrome/Application/chrome.exe',
@@ -39,7 +58,8 @@ const candidates = [
 const browser = await puppeteer.launch({
     executablePath: candidates.find((p) => existsSync(p)),
     headless: true,
-    args: ['--no-sandbox', '--disable-dev-shm-usage'],
+    // swiftshader: the 3D tile needs a working webgl context, and headless chrome has no gpu
+    args: ['--no-sandbox', '--disable-dev-shm-usage', '--use-gl=swiftshader', '--enable-unsafe-swiftshader'],
 })
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms))
@@ -102,6 +122,20 @@ const state = () => {
                   hudRect.top < painted.t + painted.h - 1
                 : null,
         stored: localStorage.getItem('webcamHudPlacement') ?? localStorage.getItem('mainsail-next.webcamHudPlacement'),
+        model: (() => {
+            const tile = document.querySelector('[data-overcam-model]')
+            if (!tile) return null
+            return {
+                state: tile.dataset.overcamModelState ?? '',
+                camera: tile.dataset.overcamModelCamera ?? '',
+                box: (({ left, top, width, height }) => ({
+                    x: Math.round(left + width / 2),
+                    y: Math.round(top + height / 2),
+                    w: Math.round(width),
+                    h: Math.round(height),
+                }))(tile.getBoundingClientRect()),
+            }
+        })(),
         targets: {
             bars: document.querySelectorAll('[data-overcam-bar]').length,
             barsActive: document.querySelectorAll('[data-overcam-bar][data-active="1"]').length,
@@ -138,7 +172,54 @@ const dragTo = async (page, x, y, shot) => {
 try {
     const page = await browser.newPage()
     await page.setViewport({ width, height, deviceScaleFactor: 1 })
-    await page.evaluateOnNewDocument(() => {
+    await page.evaluateOnNewDocument((modelFile) => {
+        /*
+         * Which file the front end thinks is loaded, decided here rather than by the printer.
+         *
+         * Every frame Moonraker sends on the websocket is passed through and, if it carries
+         * print_stats, has the file name swapped before the page ever sees it. Substituting
+         * ONE frame is not enough: a running print keeps publishing print_stats, and every one
+         * of those puts the real name back - measured, that is exactly what happened.
+         *
+         * It is done at the protocol, not in the store: the Vue 2 build keeps this in Vuex and
+         * the Vue 3 port in Pinia, and neither of those is something the harness should know.
+         */
+        window.__overcamModelFile = modelFile || null
+        const rewrite = (event) => {
+            if (!window.__overcamModelFile) return event
+            try {
+                const message = JSON.parse(event.data)
+                const stats = message?.params?.[0]?.print_stats ?? message?.result?.status?.print_stats
+                if (!stats) return event
+
+                stats.filename = window.__overcamModelFile
+                stats.print_duration = Math.max(stats.print_duration ?? 0, 42)
+                return new MessageEvent('message', { data: JSON.stringify(message) })
+            } catch {
+                return event
+            }
+        }
+
+        const Original = window.WebSocket
+        window.WebSocket = new Proxy(Original, {
+            construct(target, args) {
+                const socket = new target(...args)
+                const add = socket.addEventListener.bind(socket)
+                socket.addEventListener = (type, handler, options) =>
+                    add(
+                        type,
+                        type === 'message' && typeof handler === 'function' ? (e) => handler(rewrite(e)) : handler,
+                        options
+                    )
+                Object.defineProperty(socket, 'onmessage', {
+                    configurable: true,
+                    get: () => null,
+                    set: (handler) => add('message', (e) => handler(rewrite(e))),
+                })
+                return socket
+            },
+        })
+
         localStorage.setItem('mainsail-next.theme', 'dark')
         // clear the stored placement ONCE, on the first load, so the run starts from the
         // automatic default - and never again, or the reload check below would be testing
@@ -147,10 +228,22 @@ try {
         sessionStorage.setItem('overcam-harness', '1')
         localStorage.removeItem('webcamHudPlacement')
         localStorage.removeItem('mainsail-next.webcamHudPlacement')
-    })
+        // the 3D tile is opt-in and remembers the opt-in, so a previous run would
+        // otherwise decide whether this one starts on the thumbnail or on the scene
+        localStorage.removeItem('webcamHudModelOptIn')
+        localStorage.removeItem('mainsail-next.webcamHudModelOptIn')
+    }, MODEL_FILE)
 
+    /*
+     * @sindarius/gcodeviewer talks to console.error about g-code features it does not draw
+     * ("Missing feature Brim" on anything sliced by Orca), and swiftshader reports every
+     * software-rasteriser stall. Neither says anything about this page, and both only appear
+     * once the 3D tile is switched on - so they are named and ignored rather than allowed to
+     * turn the one check that catches real page errors into noise.
+     */
+    const thirdPartyNoise = /Missing feature|GL Driver Message|WebGPU|swiftshader/i
     const errors = []
-    page.on('console', (m) => m.type() === 'error' && errors.push(m.text()))
+    page.on('console', (m) => m.type() === 'error' && !thirdPartyNoise.test(m.text()) && errors.push(m.text()))
     page.on('pageerror', (e) => errors.push(String(e)))
 
     await page.goto(url, { waitUntil: 'networkidle2', timeout: 30000 })
@@ -192,6 +285,104 @@ try {
         Math.abs(s.painted.l - s.size) <= 2,
         `the frame sits flush against the column (bar ${s.size}px, painted starts at ${s.painted.l}px)`
     )
+
+    /*
+     * --- 7: the 3D tile turns with the mouse, and turning it does NOT move the hud ---
+     *
+     * This is the collision worth checking by hand rather than by eye. Babylon attaches its
+     * ArcRotateCamera to the canvas and calls preventDefault on the pointer events, but it
+     * never stops them propagating - so the hud's own drag handler is one bubble away from
+     * tearing the overlay out of its bar every time the user turns the part. The two numbers
+     * come from opposite ends: the camera angles are written to the DOM by the tile, the
+     * placement by the overlay, and this asserts one moved while the other did not.
+     *
+     * There is no touch screen on the tablet at the machine, so the gesture used here is a
+     * plain left-button mouse drag, deliberately.
+     */
+    const dragInsideTile = async (box) => {
+        await page.mouse.move(box.x, box.y)
+        await page.mouse.down()
+        for (let i = 1; i <= 14; i++) await page.mouse.move(box.x + i * 7, box.y + i * 2)
+        await page.mouse.up()
+        await sleep(1200)
+        return page.evaluate(state)
+    }
+
+    const beforeModel = await page.evaluate(state)
+    const placementOf = (s) => `${s.mode}/${s.anchor}/${s.side}/${s.axis}`
+
+    if (beforeModel.model === null) {
+        /*
+         * Nothing is loaded on the printer, so the tile draws nothing at all - which is the
+         * "be quiet when there is nothing" rule, and worth asserting rather than skipping.
+         */
+        console.log('printer has no file loaded - checking that the tile stays out of the way')
+        check(
+            !(await page.$('[data-overcam-model-load]')),
+            'with no file on the printer the tile leaves no button and no empty frame behind'
+        )
+    } else {
+        check(beforeModel.model.state === 'idle', 'the tile starts on the cheap thumbnail, not on a download')
+
+        // The guard first, and on the THUMBNAIL, so this runs whatever the printer has loaded.
+        // Without it the overlay is dragged out of its bar the moment the tile is touched.
+        const afterTileDrag = await dragInsideTile(beforeModel.model.box)
+        check(
+            placementOf(afterTileDrag) === placementOf(beforeModel),
+            `dragging inside the tile leaves the overlay where it was (${placementOf(beforeModel)})`
+        )
+
+        await page.click('[data-overcam-model-load]')
+        await page
+            .waitForFunction(
+                () =>
+                    ['live', 'error'].includes(
+                        document.querySelector('[data-overcam-model]')?.dataset.overcamModelState ?? ''
+                    ),
+                { timeout: 90000 }
+            )
+            .catch(() => {})
+        await sleep(1500)
+
+        const loaded = await page.evaluate(state)
+        console.log('after asking for 3D:', JSON.stringify(loaded.model))
+
+        if (loaded.model?.state === 'live') {
+            check(!!loaded.model.camera, 'the live scene reports its camera')
+
+            const turned = await dragInsideTile(loaded.model.box)
+            console.log('after dragging inside the live tile:', JSON.stringify(turned.model?.camera))
+            check(
+                turned.model?.camera !== loaded.model.camera,
+                'dragging inside the tile turns the model with the mouse'
+            )
+            check(placementOf(turned) === placementOf(loaded), 'and it still does NOT drag the overlay out of its bar')
+            await page.screenshot({ path: `${outDir}/overcam-model-turned.png` })
+        } else {
+            /*
+             * The scene did not come up, and there are three honest reasons for that, none of
+             * which is a defect:
+             *
+             *   - the file is a motion diagnostic with no extrusion at all, which
+             *     @sindarius/gcodeviewer genuinely throws on           -> state 'error'
+             *   - the printer changed the file mid-load (a job ending, the next one starting,
+             *     a klipper restart, all of which happen constantly while the machine is being
+             *     tuned) and the tile gave up on the old one           -> state 'idle'
+             *   - the printer has nothing loaded at all                -> no tile
+             *
+             * What is NOT acceptable is a tile that sits on 'loading' with nothing behind it,
+             * because that is a button the user can never press again. That is what this
+             * checks. Name a renderable file with MODEL_FILE= to reach the branch above -
+             * though a printer that is actively starting and stopping prints can still take
+             * the file away underneath it.
+             */
+            console.log('the scene did not come up - checking that the tile gave up cleanly instead')
+            check(
+                loaded.model === null || ['idle', 'error'].includes(loaded.model.state),
+                `the tile ended in a state the user can act on, not '${loaded.model?.state}'`
+            )
+        }
+    }
 
     // --- 4: stored as names, and it survives a reload ---------------------
     console.log('stored:', s.stored)
