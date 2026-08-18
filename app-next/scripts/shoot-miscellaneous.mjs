@@ -159,6 +159,55 @@ try {
     if (panel) await panel.screenshot({ path: out })
     else await page.screenshot({ path: out, fullPage: true })
 
+    /**
+     * SWEEP=1 clicks every control and prints what the firewall caught.
+     *
+     * 🔴 RIGGED MODE ONLY, and the guard is real rather than decorative: on the
+     * live printer these same clicks would sound the fire buzzer and disarm the
+     * smoke alarm. Rigged, every object is synthetic and the frames are dropped
+     * at the socket anyway.
+     *
+     * Worth doing because the command is where this panel can be wrong in ways
+     * no screenshot shows: `[fan]` scales by 255 (`M106 S153`, not `S0.60`), an
+     * output pin scales by its own `scale:` (42, not 0.42), `fan_generic` is a
+     * different command entirely, and SET_LED addresses a whole chain only if
+     * it carries no INDEX.
+     */
+    if (process.env.SWEEP && rigged) {
+        await page.evaluate(() => {
+            const root = document.querySelector('[data-panel="miscellaneous"]')
+            if (!root) return
+            for (const button of root.querySelectorAll('button[aria-pressed]')) button.click()
+        })
+        await new Promise((r) => setTimeout(r, 300))
+
+        // Sliders: set the value directly and dispatch, because dragging a
+        // reka-ui thumb from a script is a test of puppeteer, not of the panel.
+        await page.evaluate(() => {
+            const root = document.querySelector('[data-panel="miscellaneous"]')
+            if (!root) return
+            for (const input of root.querySelectorAll('input[type="number"]')) {
+                input.value = String(Number(input.value) + 1)
+                input.dispatchEvent(new Event('input', { bubbles: true }))
+                input.dispatchEvent(new Event('blur', { bubbles: true }))
+            }
+        })
+        await new Promise((r) => setTimeout(r, 300))
+
+        // A colour preset, which is the SET_LED path with a real chain behind it.
+        await page.evaluate(() => {
+            document.querySelector('[aria-label="Pick a colour for chamber_bar"]')?.click()
+        })
+        await new Promise((r) => setTimeout(r, 400))
+        await page.evaluate(() => {
+            const presets = document.querySelectorAll('[role="dialog"] button[aria-label^="Set rgb"]')
+            presets[presets.length - 1]?.click()
+        })
+        await new Promise((r) => setTimeout(r, 700))
+
+        console.log('gcode from the sweep :', (await rigReport(page)).gcode)
+    }
+
     console.log('failed requests      :', failed.length ? [...new Set(failed)] : '(none)')
     console.log(errors.length ? 'console errors: ' + errors.join(' | ') : 'no console errors')
     console.log('saved ' + out)

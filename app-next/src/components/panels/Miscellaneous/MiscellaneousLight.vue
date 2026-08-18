@@ -20,14 +20,14 @@ import { rgbToCss } from '@/lib/color'
  * NOT ported: light GROUPS (upstream lets you carve a 60-LED chain into named
  * ranges and colour them separately). They are configured in Settings and
  * stored in the Moonraker database this app must not write, and this machine's
- * strip is a single `[led]` with one element -- there is nothing to carve. The
- * chain length is read below rather than assumed, so a chain still colours as
- * a whole instead of colouring only its first pixel.
+ * strip is a single `[led]` with one element -- there is nothing to carve. A
+ * chain still colours as a WHOLE rather than only its first pixel, and that
+ * needs no chain length at all -- see the note on the SET_LED command below.
  */
 const props = defineProps<{ light: LightEntry }>()
 
 const connection = useConnectionStore()
-const { colorOrder, colorData, chainCount, settingsOf } = useMiscellaneous()
+const { colorOrder, colorData, settingsOf } = useMiscellaneous()
 
 const showDialog = ref(false)
 
@@ -62,23 +62,24 @@ function send(red: number, green: number, blue: number, white: number): void {
     if (order.value.includes('W')) parts.push(`WHITE=${white}`)
 
     // See the SYNC note in MiscellaneousControl.vue.
-    parts.push('SYNC=0')
+    parts.push('SYNC=0', 'TRANSMIT=1')
 
     /**
-     * A chain has to be written element by element -- SET_LED without INDEX
-     * addresses the whole strip in recent Klipper, but INDEX is what upstream
-     * uses and what works across versions. TRANSMIT=1 only on the last line, so
-     * a 60-pixel chain is one transmission rather than sixty.
+     * 🔴 ONE command, no INDEX, whatever the chain length.
+     *
+     * This was originally a loop that wrote every element by index, with a
+     * comment claiming that was upstream's way. Both halves were wrong.
+     * Upstream's whole-light path (`MiscellaneousLightNeopixel.sendCommand`)
+     * sends no INDEX at all -- only its light-GROUP child loops, and groups are
+     * not ported here. And Klipper's `led.py` on this printer settles what the
+     * omission means: `_set_color` does `if index is None: new_led_state =
+     * [color] * self.led_count`, i.e. no INDEX IS the whole chain.
+     *
+     * The loop was not merely redundant: on a 60-pixel strip it queued sixty
+     * commands into the same g-code queue a print is moving through, to do what
+     * one command does.
      */
-    const count = chainCount(props.light)
-    if (count <= 1) {
-        void connection.sendGcode(`${parts.join(' ')} TRANSMIT=1`)
-        return
-    }
-
-    const lines = Array.from({ length: count }, (_, index) => `${parts.join(' ')} INDEX=${index + 1}`)
-    lines[lines.length - 1] += ' TRANSMIT=1'
-    void connection.sendGcode(lines.join('\n'))
+    void connection.sendGcode(parts.join(' '))
 }
 
 function toggle(): void {

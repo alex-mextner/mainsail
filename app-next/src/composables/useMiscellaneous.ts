@@ -237,11 +237,5 @@ export function useMiscellaneous() {
         return object.color_data?.[index] ?? []
     }
 
-    /** How many addressable elements the light has. 1 for a plain [led]. */
-    const chainCount = (light: LightEntry): number => {
-        const object = (printer.objects[light.key] ?? {}) as { color_data?: number[][] }
-        return object.color_data?.length ?? 1
-    }
-
-    return { controls, lights, filamentSensors, sensors, colorOrder, colorData, chainCount, settingsOf }
+    return { controls, lights, filamentSensors, sensors, colorOrder, colorData, settingsOf }
 }
