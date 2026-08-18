@@ -592,7 +592,9 @@ export default class WebcamFullscreen extends Mixins(BaseMixin) {
 
         this.containerWidth = container.clientWidth
         this.containerHeight = container.clientHeight
-        this.actionBarWidth = this.actions?.offsetWidth ?? 0
+        // +16 for the 8px the bar is inset from the corner plus a little air, so a
+        // top-docked row ends clear of the buttons rather than flush under them
+        this.actionBarWidth = (this.actions?.offsetWidth ?? 0) + 16
 
         if (!this.measurable) {
             this.frameAspect = null
