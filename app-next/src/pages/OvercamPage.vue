@@ -1,7 +1,8 @@
 <script setup lang="ts">
-import { computed } from 'vue'
+import { computed, onBeforeUnmount, onMounted } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import WebcamOverlay from '@/components/webcams/WebcamOverlay.vue'
+import { attachOvercamLight } from '@/components/webcams/overcam-light-browser'
 import { useWebcamsStore } from '@/stores/webcams'
 import { useConnectionStore } from '@/stores/connection'
 
@@ -55,6 +56,35 @@ function close() {
     if (cameFromApp) router.back()
     else void router.push('/')
 }
+
+/**
+ * The work light: white while someone is watching, dark after five minutes
+ * unfocused, back on activity (docs/tasks.md M2b). All of the interesting part
+ * -- never darkening a light that is on for a reason -- lives in
+ * components/webcams/overcam-light.ts, which is byte-identical to the Vue 2
+ * build's copy so the two interfaces cannot disagree about who owns the strip.
+ *
+ * Mounted here rather than in WebcamOverlay.vue, which WebcamPage also uses:
+ * the request was about opening /overcam, not about any fullscreen camera.
+ */
+let detachLight: (() => void) | null = null
+
+onMounted(() => {
+    detachLight = attachOvercamLight({
+        transport: {
+            queryObjects: (objects) => connection.call('printer.objects.query', { objects }),
+            printerInfo: () => connection.call('printer.info'),
+            sendGcode: async (script) => {
+                await connection.call('printer.gcode.script', { script })
+            },
+        },
+    })
+})
+
+onBeforeUnmount(() => {
+    detachLight?.()
+    detachLight = null
+})
 </script>
 
 <template>
