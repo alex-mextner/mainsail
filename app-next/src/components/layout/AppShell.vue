@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { ref, computed } from 'vue'
 import { useRoute } from 'vue-router'
-import { mdiMenu } from '@mdi/js'
+import { mdiMenu, mdiAlertOctagon } from '@mdi/js'
 import { useConnectionStore } from '@/stores/connection'
 import { usePrinterStore } from '@/stores/printer'
 import { naviRoutesFor, type AppRouteMeta } from '@/router'
@@ -17,6 +17,38 @@ import MdiIcon from '@/components/ui/MdiIcon.vue'
 const route = useRoute()
 const connection = useConnectionStore()
 const printer = usePrinterStore()
+
+/**
+ * EMERGENCY STOP.
+ *
+ * This machine has a 1000W mains-powered bed switched by an SSR, with no
+ * hardware thermal cutout fitted, no earth on the plate and no RCD - the
+ * software is the only thing that stops a runaway. On 2026-08-19 this app took
+ * over port 80 from the old Mainsail, which meant the printer's main address
+ * suddenly had no red button at all. That is not a missing feature; it is a
+ * safety regression, so it is in the shell rather than on some page.
+ *
+ * NO CONFIRMATION DIALOG, deliberately - upstream Mainsail asks "are you sure",
+ * and that is the wrong trade here. The cost of an accidental stop is a ruined
+ * print; the cost of a slow stop is a fire. The button is small and off in the
+ * corner, which is enough friction.
+ *
+ * printer.emergency_stop is the same RPC the old interface used
+ * (src/components/dialogs/EmergencyStopDialog.vue). Klipper drops into shutdown,
+ * kills every heater and aborts motion; recovery is FIRMWARE_RESTART.
+ */
+const stopping = ref(false)
+async function emergencyStop() {
+    stopping.value = true
+    try {
+        await connection.call('printer.emergency_stop', {})
+    } finally {
+        // Deliberately not cleared on success: after a stop the socket usually
+        // drops, and a button that springs back to "ready" would suggest the
+        // machine is fine. It clears on the reconnect that follows.
+        setTimeout(() => (stopping.value = false), 4000)
+    }
+}
 
 const drawerOpen = ref(false)
 
@@ -59,6 +91,18 @@ const topBarTemps = computed(() => printer.heaters.slice(0, 2))
                         <span class="text-foreground font-medium">{{ heater.temperature.toFixed(0) }}°C</span>
                     </span>
                     <Badge :variant="statusVariant">{{ connection.statusLabel }}</Badge>
+
+                    <button
+                        type="button"
+                        data-testid="emergency-stop"
+                        :disabled="stopping"
+                        class="flex items-center gap-1.5 rounded-md bg-red-600 px-2.5 py-1.5 text-xs font-semibold text-white shadow-sm transition hover:bg-red-700 focus-visible:ring-2 focus-visible:ring-red-400 focus-visible:outline-none disabled:opacity-60"
+                        title="Аварийная остановка (M112): гасит нагрев и обрывает движение"
+                        aria-label="Аварийная остановка"
+                        @click="emergencyStop">
+                        <MdiIcon :path="mdiAlertOctagon" class="size-4" />
+                        <span class="hidden sm:inline">{{ stopping ? 'СТОП…' : 'СТОП' }}</span>
+                    </button>
                 </div>
             </div>
         </header>
