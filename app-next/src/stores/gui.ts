@@ -136,6 +136,19 @@ export interface GuiState {
             hiddenExtruders: string[]
             hiddenUnits: string[]
         }
+        /** MMU panel appearance -- upstream's `view.mmu`, same key names. */
+        mmu: {
+            showDetails: boolean
+            showTtgMap: boolean
+            showClogDetection: boolean
+            /**
+             * Paint a gate its filament colour even when the gate reports
+             * empty. Off by default, because "empty but coloured" is exactly
+             * how a stale gate map looks and the default should not hide it.
+             */
+            showUnavailableSpoolColor: boolean
+            largeFilamentStatus: boolean
+        }
         webcam: {
             /**
              * Which camera each surface shows, keyed by surface -- upstream's
@@ -276,6 +289,13 @@ const defaults = (): GuiState => ({
             showTd1Color: true,
             hiddenExtruders: [],
             hiddenUnits: [],
+        },
+        mmu: {
+            showDetails: true,
+            showTtgMap: true,
+            showClogDetection: true,
+            showUnavailableSpoolColor: false,
+            largeFilamentStatus: false,
         },
         webcam: {
             currentCam: { dashboard: 'all', page: 'all' },

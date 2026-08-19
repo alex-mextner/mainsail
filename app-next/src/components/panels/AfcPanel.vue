@@ -78,7 +78,9 @@ const clearMessage = () => connection.sendGcode('AFC_CLEAR_MESSAGE')
             <AfcPanelMenu />
         </template>
 
-        <div class="flex flex-col gap-3 px-4 pb-4" data-panel="afc">
+        <!-- `data-panel="afc"` comes from Panel.vue's own section; repeating
+             it here would give querySelector two hits for one panel. -->
+        <div class="flex flex-col gap-3 px-4 pb-4" data-afc-body>
             <div
                 v-if="message"
                 class="flex items-start gap-2 rounded-md border px-3 py-2"

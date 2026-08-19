@@ -80,3 +80,25 @@ export function hsvToRgb({ hue, saturation, value }: Hsv): Rgb {
 
 export const rgbToCss = ({ red, green, blue }: Rgb): string =>
     `rgb(${Math.round(red)}, ${Math.round(green)}, ${Math.round(blue)})`
+
+/**
+ * Black or white text, whichever stays readable on `hexColor`.
+ *
+ * Mainsail's `filamentTextColor`, kept verbatim including the 0.6 threshold.
+ * The weights are the sRGB luminance coefficients, so a saturated yellow
+ * counts as light (it is) and a saturated blue counts as dark (it is) --
+ * a plain average would get both wrong.
+ *
+ * A trailing alpha pair is accepted and ignored: MMU gate colours are
+ * `#RRGGBBAA`, and the alpha says nothing about legibility.
+ */
+export function filamentTextColor(hexColor: string): string {
+    const splits = /^#?([a-f\d]{2})([a-f\d]{2})([a-f\d]{2})(?:[a-f\d]{2})?$/i.exec(hexColor)
+    if (splits === null || splits.length < 4) return '#ffffff'
+
+    const r = parseInt(splits[1], 16) * 0.2126
+    const g = parseInt(splits[2], 16) * 0.7152
+    const b = parseInt(splits[3], 16) * 0.0722
+
+    return (r + g + b) / 255 > 0.6 ? '#222' : '#fff'
+}
