@@ -2,19 +2,32 @@
 #
 # Publish THIS fork (the Vue 2 tree, src/) to the printer.
 #
-#   bash scripts/deploy-to-printer.sh --stage      # build + publish to :8091, port 80 untouched
-#   bash scripts/deploy-to-printer.sh --live       # build + publish to port 80, with a backup
+#   bash scripts/deploy-to-printer.sh --stage      # build + publish to :8091, the live site untouched
+#   bash scripts/deploy-to-printer.sh --live       # build + publish to :8090, with a backup
 #   bash scripts/deploy-to-printer.sh --check      # verify both, change nothing
-#   bash scripts/deploy-to-printer.sh --rollback   # restore the newest backup to port 80
+#   bash scripts/deploy-to-printer.sh --rollback   # restore the newest backup to :8090
 #   bash scripts/deploy-to-printer.sh --unstage    # remove the staging site and directory
 #
-# Until now this deploy was done by hand, which is why there was no rehearsal
-# step and no scripted way back. Both exist here:
+# 🔴 2026-08-19: THIS TREE NO LONGER OWNS PORT 80.
+# On the user's request the two interfaces swapped ports. The Vue 3 fork
+# (app-next, branch feat/vue3-migration) is now the primary interface on port 80;
+# this Vue 2 build is the fallback, on :8090. So "live" below means :8090, not
+# :80 -- the directory it deploys to (/home/ultra/mainsail) has not changed, only
+# the port nginx serves it on.
+#
+# The port itself lives in /etc/nginx/sites-available/mainsail, which is
+# hand-managed and NOT written by this script (unlike the staging site file
+# below). Its authoritative copy is tracked in the printer repo under
+# orangepi-system/nginx/mainsail. If you ever need to change the live port,
+# change it there and in that file -- not here.
+#
+# Until 2026-08-18 this deploy was done by hand, which is why there was no
+# rehearsal step and no scripted way back. Both exist here:
 #
 #   --stage  serves the same bundle from /home/ultra/mainsail-stage on port 8091,
-#            through a site file of its own. Port 80 is not touched at all, so a
-#            layout change can be looked at on the real machine, with the real
-#            camera, before the interface the user prints with is replaced.
+#            through a site file of its own. The live directory is not touched at
+#            all, so a layout change can be looked at on the real machine, with
+#            the real camera, before the fallback interface is replaced.
 #   --live   copies /home/ultra/mainsail to /home/ultra/mainsail.bak.<stamp>
 #            first, and --rollback puts the newest such backup back.
 #
@@ -31,6 +44,7 @@ set -euo pipefail
 HOST_USER="ultra@192.168.11.160"
 HOST_ROOT="root@192.168.11.160"
 LIVE_DIR="/home/ultra/mainsail"
+LIVE_PORT=8090          # set in sites-available/mainsail, not written by this script
 STAGE_DIR="/home/ultra/mainsail-stage"
 STAGE_PORT=8091
 STAGE_SITE="mainsail-stage"
@@ -102,17 +116,24 @@ upload() {
 
 verify() {
     echo "--- verifying ---"
+    # The <title> lines are the point: an HTTP 200 only says something answered,
+    # not WHICH app answered. Since the two interfaces swapped ports on
+    # 2026-08-19, plain 'Mainsail' must be on :$LIVE_PORT and 'Mainsail Next'
+    # (the Vue 3 fork) on :80. If those two are the other way round, the swap
+    # has been half-undone and one of the site files needs looking at.
     ssh_u "
-        printf 'port 80 index     : '; curl -s -o /dev/null -w '%{http_code}\n' http://127.0.0.1/
-        printf 'port 80 /overcam  : '; curl -s -o /dev/null -w '%{http_code}\n' http://127.0.0.1/overcam/mbot
-        printf 'port 80 moonraker : '; curl -s -o /dev/null -w '%{http_code}\n' http://127.0.0.1/printer/info
+        printf 'live :$LIVE_PORT title  : '; curl -s --max-time 10 http://127.0.0.1:$LIVE_PORT/ | grep -o '<title>[^<]*</title>' || echo '(no title!)'
+        printf 'live :$LIVE_PORT index  : '; curl -s -o /dev/null -w '%{http_code}\n' http://127.0.0.1:$LIVE_PORT/
+        printf 'live :$LIVE_PORT overcam: '; curl -s -o /dev/null -w '%{http_code}\n' http://127.0.0.1:$LIVE_PORT/overcam/mbot
+        printf 'live :$LIVE_PORT moonrkr: '; curl -s -o /dev/null -w '%{http_code}\n' http://127.0.0.1:$LIVE_PORT/printer/info
         # ?action=snapshot, never ?action=stream: a stream is one response that never
         # ends and curl would hang here for good.
-        printf 'port 80 camera    : '; curl -s -o /dev/null --max-time 10 -w '%{http_code} (%{size_download} bytes)\n' 'http://127.0.0.1/webcam/?action=snapshot'
-        printf 'port 80 config    : '; curl -s http://127.0.0.1/config.json | tr -d ' \n' | head -c 120; echo
+        printf 'live :$LIVE_PORT camera : '; curl -s -o /dev/null --max-time 10 -w '%{http_code} (%{size_download} bytes)\n' 'http://127.0.0.1:$LIVE_PORT/webcam/?action=snapshot'
+        printf 'live :$LIVE_PORT config : '; curl -s http://127.0.0.1:$LIVE_PORT/config.json | tr -d ' \n' | head -c 120; echo
         if [ -d $STAGE_DIR ]; then
             printf 'stage :$STAGE_PORT index : '; curl -s -o /dev/null -w '%{http_code}\n' http://127.0.0.1:$STAGE_PORT/
         fi
+        printf 'PRIMARY :80 title  : '; curl -s --max-time 10 http://127.0.0.1/ | grep -o '<title>[^<]*</title>' || echo '(no title!)'
         printf 'live version      : '; cat $LIVE_DIR/.version 2>/dev/null || echo '(none)'
         echo '--- backups ---'; ls -d $LIVE_DIR.bak.* 2>/dev/null || echo '(none)'
     "
@@ -187,7 +208,7 @@ nginx -t" || die "nginx config did not validate - NOT reloading, port 80 untouch
         ssh_r "systemctl reload nginx" || die "nginx reload failed"
         verify
         echo
-        echo "Staged: http://192.168.11.160:$STAGE_PORT/overcam/mbot   (port 80 unchanged)"
+        echo "Staged: http://192.168.11.160:$STAGE_PORT/overcam/mbot   (live :$LIVE_PORT and primary :80 unchanged)"
         ;;
 
     --live)
@@ -200,7 +221,7 @@ nginx -t" || die "nginx config did not validate - NOT reloading, port 80 untouch
         echo
         cat <<EOF
 
-Live: http://192.168.11.160/overcam/mbot
+Live: http://192.168.11.160:$LIVE_PORT/overcam/mbot   (fallback interface since the port swap)
 Rollback: bash scripts/deploy-to-printer.sh --rollback   (restores $LIVE_DIR.bak.$STAMP)
 EOF
         ;;
