@@ -2,6 +2,7 @@
 import { onMounted } from 'vue'
 import HistoryListPanel from '@/components/panels/HistoryListPanel.vue'
 import HistoryStatisticsPanel from '@/components/panels/HistoryStatisticsPanel.vue'
+import MaintenancePanel from '@/components/panels/MaintenancePanel.vue'
 import { useHistoryStore } from '@/stores/history'
 
 /**
@@ -26,6 +27,7 @@ onMounted(() => history.ensurePage())
 <template>
     <div class="gap-dgap flex w-full flex-col">
         <HistoryStatisticsPanel />
+        <MaintenancePanel />
         <HistoryListPanel />
     </div>
 </template>
