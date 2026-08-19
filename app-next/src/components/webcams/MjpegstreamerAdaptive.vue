@@ -2,6 +2,7 @@
 import { ref, computed, watch, onMounted, onBeforeUnmount } from 'vue'
 import { useDocumentVisibility, useElementVisibility } from '@vueuse/core'
 import { resolveWebcamUrl, webcamTransform, webcamWrapperStyle, type WebcamConfig } from '@/lib/webcam'
+import WebcamNozzleCrosshair from './WebcamNozzleCrosshair.vue'
 
 /**
  * `mjpegstreamer-adaptive` -- the service this printer's camera actually uses.
@@ -66,6 +67,13 @@ const fpsOutput = computed(() => {
 })
 
 const showFpsCounter = computed(() => props.showFps && !(props.webcam.extra_data?.hideFps ?? false))
+
+/**
+ * The nozzle crosshair is off unless the camera's `extra_data` turns it on --
+ * upstream's flag, in upstream's place, so a camera configured in the other
+ * interface carries its setting across.
+ */
+const showNozzleCrosshair = computed(() => (props.webcam.extra_data?.nozzleCrosshair as boolean | undefined) ?? false)
 
 function clearTimers() {
     if (timer) {
@@ -182,6 +190,16 @@ defineExpose({ image })
             :alt="webcam.name"
             @load="onLoad"
             @error="onError" />
+
+        <!--
+            The nozzle crosshair. Only while CONNECTED: upstream's rule, and the
+            right one -- hairlines over a "connecting" spinner look like the
+            camera is showing something it is not.
+        -->
+        <WebcamNozzleCrosshair
+            v-if="status === 'connected' && showNozzleCrosshair"
+            :webcam="webcam"
+            :aspect-ratio="aspectRatio" />
 
         <span
             v-if="status === 'connected' && showFpsCounter"
