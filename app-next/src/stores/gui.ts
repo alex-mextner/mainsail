@@ -120,6 +120,22 @@ export interface GuiState {
             /** Which of the two right-hand charts is shown. */
             chart: 'filament_usage' | 'printtime_avg'
         }
+        /**
+         * AFC panel appearance -- upstream's `view.afc`, same key names.
+         *
+         * `hiddenExtruders` / `hiddenUnits` have no UI here yet and are read
+         * only: upstream hides them from a settings dialog that is not ported.
+         * They stay in the shape because the panel already honours them, so
+         * a stored value from the real Mainsail is not silently ignored.
+         */
+        afc: {
+            showFilamentName: boolean
+            showLaneInfinite: boolean
+            showUnitIcons: boolean
+            showTd1Color: boolean
+            hiddenExtruders: string[]
+            hiddenUnits: string[]
+        }
         webcam: {
             /**
              * Which camera each surface shows, keyed by surface -- upstream's
@@ -249,6 +265,17 @@ const defaults = (): GuiState => ({
             statusView: 'chart',
             statusValue: 'jobs',
             chart: 'filament_usage',
+        },
+        // Upstream's defaults: the filament name is OFF because the lane card
+        // is ~9rem wide and the name is the one field that reliably overflows
+        // it; the other three are on.
+        afc: {
+            showFilamentName: false,
+            showLaneInfinite: true,
+            showUnitIcons: true,
+            showTd1Color: true,
+            hiddenExtruders: [],
+            hiddenUnits: [],
         },
         webcam: {
             currentCam: { dashboard: 'all', page: 'all' },

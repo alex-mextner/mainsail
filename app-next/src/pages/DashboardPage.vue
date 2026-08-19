@@ -14,6 +14,7 @@ import WebcamPanel from '@/components/panels/WebcamPanel.vue'
 import MiscellaneousPanel from '@/components/panels/MiscellaneousPanel.vue'
 import LedEffectsPanel from '@/components/panels/LedEffectsPanel.vue'
 import SpoolmanPanel from '@/components/panels/SpoolmanPanel.vue'
+import AfcPanel from '@/components/panels/AfcPanel.vue'
 
 /**
  * Mainsail's dashboard: panels distributed across 1-3 columns depending on the
@@ -56,6 +57,7 @@ type FixedPanel =
     | 'miscellaneous'
     | 'ledeffects'
     | 'spoolman'
+    | 'afc'
 
 /** A macro group renders one panel each, so the list cannot be a fixed union. */
 type PanelEntry = { kind: FixedPanel } | { kind: 'macrogroup'; id: string }
@@ -93,6 +95,7 @@ const columns = computed<{ span: string; panels: PanelEntry[] }[]>(() => {
                         { kind: 'miscellaneous' },
                         { kind: 'ledeffects' },
                         { kind: 'spoolman' },
+                        { kind: 'afc' },
                         { kind: 'temperature' },
                         { kind: 'miniconsole' },
                     ],
@@ -111,6 +114,7 @@ const columns = computed<{ span: string; panels: PanelEntry[] }[]>(() => {
                         { kind: 'miscellaneous' },
                         { kind: 'ledeffects' },
                         { kind: 'spoolman' },
+                        { kind: 'afc' },
                     ],
                 },
                 { span: 'col-span-6', panels: [{ kind: 'temperature' }, { kind: 'miniconsole' }] },
@@ -128,6 +132,7 @@ const columns = computed<{ span: string; panels: PanelEntry[] }[]>(() => {
                         { kind: 'miscellaneous' },
                         { kind: 'ledeffects' },
                         { kind: 'spoolman' },
+                        { kind: 'afc' },
                     ],
                 },
                 { span: 'col-span-7', panels: [{ kind: 'temperature' }, { kind: 'miniconsole' }] },
@@ -144,6 +149,7 @@ const columns = computed<{ span: string; panels: PanelEntry[] }[]>(() => {
                         { kind: 'miscellaneous' },
                         { kind: 'ledeffects' },
                         { kind: 'spoolman' },
+                        { kind: 'afc' },
                     ],
                 },
                 // Upstream's widescreen third column starts with the webcam and
@@ -182,6 +188,7 @@ const keyOf = (panel: PanelEntry) => (panel.kind === 'macrogroup' ? `macrogroup-
                     <MiscellaneousPanel v-else-if="panel.kind === 'miscellaneous'" />
                     <LedEffectsPanel v-else-if="panel.kind === 'ledeffects'" />
                     <SpoolmanPanel v-else-if="panel.kind === 'spoolman'" />
+                    <AfcPanel v-else-if="panel.kind === 'afc'" />
                     <TemperaturePanel v-else-if="panel.kind === 'temperature'" />
                     <MiniconsolePanel v-else-if="panel.kind === 'miniconsole'" />
                 </template>

@@ -41,6 +41,14 @@ export interface SpoolmanFilament {
     weight?: number
     density?: number
     diameter?: number
+    /**
+     * Spoolman's per-filament recommended temperatures. Not used by the
+     * Spoolman panel itself, which is why they were missing until AFC needed
+     * them: a lane's spool tooltip quotes them so the right preheat is visible
+     * without opening Spoolman.
+     */
+    settings_extruder_temp?: number
+    settings_bed_temp?: number
     vendor?: SpoolmanVendor
 }
 
