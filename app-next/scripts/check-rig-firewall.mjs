@@ -2,7 +2,7 @@
 /**
  * Prove the rig's firewall actually stops calls, instead of merely listing them.
  *
- *   node scripts/check-rig-firewall.mjs [url]     # default http://192.168.11.160:8090/
+ *   node scripts/check-rig-firewall.mjs [url]     # default http://192.168.11.160/
  *
  * 🔴 WHY THIS SCRIPT EXISTS
  * -------------------------
@@ -49,7 +49,9 @@ import { homedir } from 'node:os'
 import { join } from 'node:path'
 import { installRig, rigReport, DEFAULT_BLOCKED_METHODS, BLOCK_EXEMPTIONS } from './lib/rig.mjs'
 
-const url = process.argv[2] ?? 'http://192.168.11.160:8090/'
+// Bare address: since the 2026-08-19 port swap this fork is served on port 80
+// and the old Mainsail sits on :8090.
+const url = process.argv[2] ?? 'http://192.168.11.160/'
 const origin = new URL(url).origin
 const PROBE_NAMESPACE = 'rig_firewall_probe'
 

@@ -1,7 +1,7 @@
 /**
  * Prove what the app does when its Moonraker socket drops and comes back.
  *
- *   node scripts/reconnect-check.mjs http://192.168.11.160:8090/console
+ *   node scripts/reconnect-check.mjs http://192.168.11.160/console
  *
  * Reports: how many sockets existed, what the status chip said the instant the
  * socket closed, whether a new socket appeared, and whether the console

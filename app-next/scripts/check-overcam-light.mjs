@@ -21,7 +21,8 @@
  * stage (mid-print RGB_PRINTING white) are just values in the stub.
  *
  *   node scripts/check-overcam-light.mjs <url>
- *   node scripts/check-overcam-light.mjs http://192.168.11.160:8090/overcam/mbot
+ *   node scripts/check-overcam-light.mjs http://192.168.11.160/overcam/mbot        # this fork
+ *   node scripts/check-overcam-light.mjs http://192.168.11.160:8090/overcam/mbot   # old Mainsail
  *
  * Reads window.__overcamLight and <html data-light-*>, so it runs unchanged
  * against the Vue 2 build and the Vue 3 port, like measure-overcam.mjs does.
@@ -31,7 +32,10 @@ import { existsSync } from 'node:fs'
 import { homedir } from 'node:os'
 import { join } from 'node:path'
 
-const [url = 'http://192.168.11.160:8090/overcam/mbot'] = process.argv.slice(2)
+// Bare address, no port: since the 2026-08-19 port swap this fork IS port 80.
+// The old Mainsail moved to :8090, so leaving the old default here would have
+// pointed this harness at the other app and quietly measured the wrong thing.
+const [url = 'http://192.168.11.160/overcam/mbot'] = process.argv.slice(2)
 
 /** Must equal SENTINEL_CHANNEL in src/components/webcams/overcam-light.ts. The
  *  page's own value is asserted against this, so the two cannot drift apart:
