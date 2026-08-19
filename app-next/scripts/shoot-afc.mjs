@@ -142,6 +142,15 @@ try {
                 )
             )
         )
+
+        // And FIRE them. Listing the rows proves the filter; only clicking
+        // proves the row is wired to the command it names. Without this the
+        // g-code artifact covered MMU's menu but not AFC's.
+        await page.evaluate(() => {
+            for (const item of document.querySelectorAll('[role="menu"] [data-afc-macro]')) item.click()
+        })
+        await new Promise((r) => setTimeout(r, 500))
+        await page.keyboard.press('Escape')
     }
 
     if (state === 'sweep') {
