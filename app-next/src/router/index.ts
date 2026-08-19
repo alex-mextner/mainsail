@@ -9,6 +9,7 @@ import {
     mdiCog,
     mdiGrid,
     mdiTimelapse,
+    mdiPrinter3d,
 } from '@mdi/js'
 
 /**
@@ -95,6 +96,27 @@ const routes: RouteRecordRaw[] = [
             showInNavi: true,
             ported: true,
             position: 30,
+        } satisfies AppRouteMeta,
+    },
+    {
+        /**
+         * The printer farm. Reachable by URL, never in the navigation --
+         * upstream's own `showInNavi: false` for this route, because it is
+         * meaningless unless the build serves several printers, and this one
+         * does not (see `stores/farm.ts`). `ported: true` because the page
+         * renders its real content: on this deployment that content is an
+         * honest "this interface is served by a single printer", which is a
+         * fact about the DEPLOYMENT, not about the port being unfinished.
+         */
+        name: 'farm',
+        path: '/allPrinters',
+        component: () => import('@/pages/FarmPage.vue'),
+        meta: {
+            title: 'Printers',
+            icon: mdiPrinter3d,
+            showInNavi: false,
+            ported: true,
+            position: 15,
         } satisfies AppRouteMeta,
     },
     {
