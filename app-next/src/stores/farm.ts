@@ -10,7 +10,7 @@ import { defineStore } from 'pinia'
  * printer was the right test. Farm asks nothing of the printer at all. It is a
  * view over OTHER Moonraker hosts, and upstream gates it on `instancesDB`:
  *
- *   'moonraker'  one printer, served by that printer   <- what :8090 is
+ *   'moonraker'  one printer, served by that printer   <- what this build is
  *   'browser'    a user-managed list in localStorage
  *   'json'       a fixed list baked into remote/config.json
  *
@@ -69,7 +69,8 @@ export const useFarmStore = defineStore('farm', () => {
     /**
      * Which deployment mode this build is in. `moonraker` means "this UI is
      * served by the one printer it talks to", which is what the app-next
-     * bundle on :8090 is, so nothing farm-related is ever activated.
+     * bundle is (whichever port it happens to be served on), so nothing
+     * farm-related is ever activated.
      */
     const mode = ref<InstancesMode>('moonraker')
 
